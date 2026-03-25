@@ -6,6 +6,14 @@
 
 Gearbox is a powerful macOS-native local automation manager. It allows you to schedule and manage background tasks with a clean, modern UI and a flexible CLI.
 
+### Why Gearbox? ⚙️
+- **Local First**: Your data stays on your machine in a private SQLite database.
+- **Native Feel**: Built with SwiftUI for a premium, lightweight integration with macOS.
+- **Python Power**: Leverage the full ecosystem of Python for your automation scripts.
+- **Transparent**: Live log streaming means you always know what's happening.
+
+[Add a screenshot of the menu bar app here]
+
 ## Features
 
 - **Native macOS Menu Bar UI**: Monitor and control tasks directly from your menu bar with a polished Swift-based app.
@@ -15,6 +23,8 @@ Gearbox is a powerful macOS-native local automation manager. It allows you to sc
 - **Task Isolation**: Each task runs in its own process with full log capture.
 - **Background Daemon**: A lightweight Python daemon manages the execution queue.
 - **CLI Interface**: Powerful command-line tool for managing tasks.
+
+[Add a GIF of the Task Creation flow here]
 
 ## Installation
 
