@@ -21,6 +21,13 @@ struct DesktopContentView: View {
                             NavigationLink(value: task.id) {
                                 TaskListRow(task: task, dbManager: dbManager)
                             }
+                            .contextMenu {
+                                Button(role: .destructive) {
+                                    dbManager.removeTaskViaCLI(name: task.name)
+                                } label: {
+                                    Label("Delete", systemImage: "trash")
+                                }
+                            }
                         }
                     }
                 } header: {
@@ -144,6 +151,15 @@ struct TaskDetailView: View {
                     .toggleStyle(.switch)
                     .labelsHidden()
                     .controlSize(.small)
+                    
+                    Button(role: .destructive, action: {
+                        dbManager.removeTaskViaCLI(name: task.name)
+                    }) {
+                        Image(systemName: "trash")
+                            .foregroundColor(.red.opacity(0.8))
+                    }
+                    .buttonStyle(.plain)
+                    .help("Delete automation")
                 }
             }
             .padding(24)
