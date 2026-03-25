@@ -97,16 +97,33 @@ class TaskManager:
             conn.close()
 
     @staticmethod
-    def log_run_end(run_id: str, status: str, exit_code: int, stdout: str, stderr: str):
+    def log_run_end(run_id: str, status: str, exit_code: int, stdout: str = None, stderr: str = None):
         conn = get_connection()
         cursor = conn.cursor()
         now = datetime.datetime.now().isoformat()
+        
+        # Check current status - don't overwrite "cancelled" with "failed"
+        cursor.execute("SELECT status FROM runs WHERE id = ?", (run_id,))
+        row = cursor.fetchone()
+        if row and row[0] == "cancelled" and status == "failed":
+            status = "cancelled"
+
+        # If stdout/stderr are not provided, try reading from the temp log file
+        if stdout is None or stderr is None:
+            log_path = os.path.expanduser(f"~/.gearbox/logs/{run_id}.log")
+            if os.path.exists(log_path):
+                with open(log_path, "r") as f:
+                    stdout = f.read()
+                stderr = ""
+                try: os.remove(log_path)
+                except: pass
+
         try:
             cursor.execute('''
                 UPDATE runs
                 SET status = ?, ended_at = ?, exit_code = ?, stdout = ?, stderr = ?
                 WHERE id = ?
-            ''', (status, now, exit_code, stdout, stderr, run_id))
+            ''', (status, now, exit_code, stdout or "", stderr or "", run_id))
             conn.commit()
         finally:
             conn.close()
@@ -173,34 +190,42 @@ class TaskManager:
     @staticmethod
     def execute_task(task_id: str, command: str):
         run_id = TaskManager.log_run_start(task_id)
+        log_dir = os.path.expanduser("~/.gearbox/logs")
+        os.makedirs(log_dir, exist_ok=True)
+        log_path = os.path.join(log_dir, f"{run_id}.log")
+        
         try:
             env_setup = "export PATH=/opt/homebrew/bin:/usr/local/bin:$PATH; source ~/.zprofile 2>/dev/null || true; source ~/.zshrc 2>/dev/null || true; "
             final_cmd = env_setup + command
             
-            process = subprocess.Popen(
-                ["/bin/zsh", "-c", final_cmd],
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-                text=True,
-                start_new_session=True
-            )
+            with open(log_path, "w") as log_file:
+                process = subprocess.Popen(
+                    ["/bin/zsh", "-c", final_cmd],
+                    stdout=log_file,
+                    stderr=subprocess.STDOUT, # Combine for live streaming simplicity
+                    text=True,
+                    start_new_session=True
+                )
+                
+                TaskManager.update_run_pid(run_id, process.pid)
+                process.wait()
             
-            TaskManager.update_run_pid(run_id, process.pid)
-            stdout, stderr = process.communicate()
-            
-            status = "success" if process.returncode == 0 else "failed"
+            # Detect cancellation from signals
+            if process.returncode in [-9, -15, 137, 143]:
+                status = "cancelled"
+            else:
+                status = "success" if process.returncode == 0 else "failed"
+                
             TaskManager.log_run_end(
                 run_id=run_id,
                 status=status,
-                exit_code=process.returncode,
-                stdout=stdout,
-                stderr=stderr
+                exit_code=process.returncode
             )
         except Exception as e:
+            with open(log_path, "a") as f:
+                f.write(f"\nInternal Error: {str(e)}\n")
             TaskManager.log_run_end(
                 run_id=run_id,
                 status="failed",
-                exit_code=-1,
-                stdout="",
-                stderr=str(e)
+                exit_code=-1
             )

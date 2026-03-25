@@ -130,10 +130,11 @@ struct MenuBarContentView: View {
                 } else {
                     VStack(spacing: 6) {
                         ForEach(dbManager.recentRuns.prefix(2), id: \.id) { run in
+                            let config = statusConfig(for: run.status)
                             HStack(spacing: 8) {
-                                Image(systemName: run.status == "success" ? "checkmark.circle" : "xmark.circle")
+                                Image(systemName: config.icon)
                                     .font(.system(size: 10))
-                                    .foregroundColor(run.status == "success" ? .secondary : .red.opacity(0.7))
+                                    .foregroundColor(config.color)
                                 
                                 let taskName = dbManager.tasks.first(where: { $0.id == run.taskId })?.name ?? "Event"
                                 Text(taskName)
@@ -156,6 +157,16 @@ struct MenuBarContentView: View {
         .frame(width: 280)
         .onReceive(timer) { _ in
             dbManager.fetchData()
+        }
+    }
+    
+    private func statusConfig(for status: String) -> (icon: String, color: Color) {
+        switch status.lowercased() {
+        case "running": return ("circle.dashed", .blue)
+        case "success": return ("checkmark.circle", .secondary)
+        case "failed": return ("xmark.circle", .red.opacity(0.7))
+        case "cancelled": return ("minus.circle", .gray)
+        default: return ("questionmark.circle", .secondary)
         }
     }
 }

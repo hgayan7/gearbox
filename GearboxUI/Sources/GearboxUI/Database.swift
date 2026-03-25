@@ -260,6 +260,16 @@ class DatabaseManager: ObservableObject {
         }
         DispatchQueue.main.async { self.fetchData() }
     }
+    
+    func fetchLiveLog(runId: String) -> String? {
+        let homeDir = FileManager.default.homeDirectoryForCurrentUser
+        let logPath = homeDir.appendingPathComponent(".gearbox/logs/\(runId).log").path
+        
+        if FileManager.default.fileExists(atPath: logPath) {
+            return try? String(contentsOfFile: logPath, encoding: .utf8)
+        }
+        return nil
+    }
 
     func removeTaskViaCLI(name: String) {
         let process = Process()

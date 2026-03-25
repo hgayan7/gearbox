@@ -152,6 +152,10 @@ struct TaskDetailView: View {
                         } else {
                             dbManager.runTaskManually(name: task.name)
                         }
+                        // Refresh after a short delay
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) {
+                            refreshRuns()
+                        }
                     }) {
                         Label(isCurrentlyRunning ? "Stop" : "Run Now", systemImage: isCurrentlyRunning ? "stop.fill" : "play.fill")
                             .padding(.horizontal, 4)
@@ -185,9 +189,9 @@ struct TaskDetailView: View {
                 VStack(alignment: .leading, spacing: 0) {
                     Table(runs, selection: $selectedRunId) {
                         TableColumn("Status") { run in
-                            Label(run.status.capitalized, 
-                                  systemImage: run.status == "success" ? "checkmark.circle" : "xmark.circle")
-                                .foregroundColor(run.status == "success" ? .secondary : .red.opacity(0.8))
+                            let config = statusConfig(for: run.status)
+                            Label(run.status.capitalized, systemImage: config.icon)
+                                .foregroundColor(config.color)
                         }
                         .width(100)
                         
@@ -201,7 +205,7 @@ struct TaskDetailView: View {
                 .frame(minHeight: 150)
                 
                 if let id = selectedRunId, let run = runs.first(where: { $0.id == id }) {
-                    RunDetailView(run: run, command: task.command)
+                    RunDetailView(run: run, command: task.command, dbManager: dbManager)
                         .frame(minHeight: 200)
                 } else {
                     VStack {
@@ -216,10 +220,21 @@ struct TaskDetailView: View {
         }
         .onAppear { refreshRuns() }
         .onChange(of: task.id) { _ in refreshRuns() }
-        .onReceive(Timer.publish(every: 5, on: .main, in: .common).autoconnect()) { _ in refreshRuns() }
+        .onChange(of: dbManager.activeTaskIds) { _ in refreshRuns() }
+        .onReceive(Timer.publish(every: 2.5, on: .main, in: .common).autoconnect()) { _ in refreshRuns() }
     }
     
     private func refreshRuns() {
         runs = dbManager.fetchRuns(for: task.id)
+    }
+    
+    private func statusConfig(for status: String) -> (icon: String, color: Color) {
+        switch status.lowercased() {
+        case "running": return ("circle.dashed", .blue)
+        case "success": return ("checkmark.circle", .secondary)
+        case "failed": return ("xmark.circle", .red.opacity(0.8))
+        case "cancelled": return ("minus.circle", .gray)
+        default: return ("questionmark.circle", .secondary)
+        }
     }
 }

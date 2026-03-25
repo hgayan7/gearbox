@@ -4,7 +4,9 @@ Gearbox is a powerful macOS-native local automation manager. It allows you to sc
 
 ## Features
 
-- **Native macOS Menu Bar UI**: Monitor and control tasks directly from your menu bar.
+- **Native macOS Menu Bar & Desktop UI**: Monitor and control tasks directly from your menu bar or with the dedicated desktop dashboard.
+- **Live Log Streaming**: Watch your automations execute in real-time with built-in auto-scrolling. 📡
+- **Accurate Status Tracking**: Clear visual indicators for **Success**, **Failed**, **Running**, and **Cancelled** tasks.
 - **Smart Scheduling**: Flexible cron-based and natural language scheduling (e.g., "every 5 minutes", "mondays at 10:00").
 - **Task Isolation**: Each task runs in its own process with full log capture.
 - **Background Daemon**: A lightweight Python daemon manages the execution queue.
