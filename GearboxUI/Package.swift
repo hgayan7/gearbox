@@ -10,7 +10,8 @@ let package = Package(
         .executableTarget(
             name: "GearboxUI",
             dependencies: [],
-            path: "Sources/GearboxUI"
+            path: "Sources/GearboxUI",
+            resources: [.process("Resources")]
         ),
         .testTarget(
             name: "GearboxUITests",

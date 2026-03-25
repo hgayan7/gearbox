@@ -22,9 +22,31 @@ struct GearboxUIApp: App {
             DesktopContentView(dbManager: dbManager)
         }
         
-        MenuBarExtra("Gearbox", systemImage: "gearshape.fill") {
+        MenuBarExtra {
             MenuBarContentView(dbManager: dbManager)
+        } label: {
+            Image(nsImage: MenuBarIcon.appIcon)
         }
         .menuBarExtraStyle(.window)
     }
+}
+
+private enum MenuBarIcon {
+    static let appIcon: NSImage = {
+        let fallback = NSImage(systemSymbolName: "gearshape.fill", accessibilityDescription: "Gearbox") ?? NSImage()
+        guard
+            let url = Bundle.module.url(forResource: "AppIcon", withExtension: "png"),
+            let image = NSImage(contentsOf: url)
+        else {
+            return fallback
+        }
+
+        let targetSize = NSSize(width: 18, height: 18)
+        let resizedImage = NSImage(size: targetSize)
+        resizedImage.lockFocus()
+        image.draw(in: NSRect(origin: .zero, size: targetSize))
+        resizedImage.unlockFocus()
+        resizedImage.isTemplate = false
+        return resizedImage
+    }()
 }

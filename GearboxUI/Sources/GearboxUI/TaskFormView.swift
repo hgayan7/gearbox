@@ -189,7 +189,7 @@ struct TaskFormView: View {
                             } else if isDirectory {
                                 Text("No package.json or Scripts found in this folder.")
                                     .font(.system(size: 11))
-                                    .foregroundColor(GearboxDesign.Color.warning)
+                                    .foregroundColor(.orange)
                             }
                         }
                         .padding(16)
@@ -206,7 +206,7 @@ struct TaskFormView: View {
             HStack(spacing: 16) {
                 if let err = errorMessage {
                     Text(err)
-                        .foregroundColor(GearboxDesign.Color.danger)
+                        .foregroundColor(.red)
                         .font(.system(size: 11, weight: .medium))
                 }
                 
@@ -219,7 +219,7 @@ struct TaskFormView: View {
                 
                 Button("Create Task") { saveTask() }
                     .buttonStyle(.borderedProminent)
-                    .tint(GearboxDesign.Color.accent)
+                    .tint(.accentColor)
                     .disabled(name.isEmpty || selectedPath.isEmpty || (isDirectory && selectedNpmCommand.isEmpty))
             }
             .padding(30)

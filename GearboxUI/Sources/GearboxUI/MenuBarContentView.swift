@@ -16,9 +16,10 @@ struct MenuBarContentView: View {
             HStack {
                 VStack(alignment: .leading, spacing: 1) {
                     HStack(spacing: 6) {
-                        Image(systemName: "gearshape.fill")
-                            .font(.system(size: 13, weight: .semibold))
-                            .foregroundColor(.accentColor)
+                        Image(nsImage: NSApplication.shared.applicationIconImage)
+                            .resizable()
+                            .aspectRatio(contentMode: .fit)
+                            .frame(width: 18, height: 18)
                         Text("Gearbox")
                             .font(.system(size: 16, weight: .bold))
                     }
