@@ -42,9 +42,16 @@ def init_db():
             exit_code INTEGER,
             stdout TEXT,
             stderr TEXT,
+            pid INTEGER,
             FOREIGN KEY (task_id) REFERENCES tasks (id) ON DELETE CASCADE
         )
     ''')
+    
+    try:
+        cursor.execute("ALTER TABLE runs ADD COLUMN pid INTEGER")
+    except sqlite3.OperationalError:
+        pass
+    
     conn.commit()
     
     try:

@@ -127,6 +127,20 @@ struct TaskDetailView: View {
                     Text(task.scheduleDesc)
                         .font(.system(size: 12))
                         .foregroundColor(.secondary)
+                    
+                    HStack(spacing: 4) {
+                        Image(systemName: "terminal")
+                            .font(.system(size: 8))
+                            .foregroundColor(.secondary)
+                        Text(task.command)
+                            .font(.system(size: 10, design: .monospaced))
+                            .foregroundColor(.secondary.opacity(0.8))
+                            .padding(.horizontal, 4)
+                            .padding(.vertical, 2)
+                            .background(Color.primary.opacity(0.05))
+                            .cornerRadius(4)
+                    }
+                    .padding(.top, 4)
                 }
                 
                 Spacer()
@@ -187,7 +201,7 @@ struct TaskDetailView: View {
                 .frame(minHeight: 150)
                 
                 if let id = selectedRunId, let run = runs.first(where: { $0.id == id }) {
-                    RunDetailView(run: run)
+                    RunDetailView(run: run, command: task.command)
                         .frame(minHeight: 200)
                 } else {
                     VStack {

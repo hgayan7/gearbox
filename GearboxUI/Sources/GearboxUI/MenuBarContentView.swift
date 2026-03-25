@@ -188,6 +188,7 @@ struct MenuBarTaskRow: View {
                     .font(.system(size: 10))
                     .foregroundColor(.secondary)
             }
+            .help(task.command)
             
             Spacer()
             

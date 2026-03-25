@@ -2,15 +2,25 @@ import SwiftUI
 
 struct RunDetailView: View {
     let run: Run
+    let command: String
     
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             HStack {
-                HStack(spacing: 6) {
-                    Image(systemName: "terminal")
-                        .font(.system(size: 11))
-                    Text("Execution logs")
-                        .font(.system(size: 13, weight: .semibold))
+                VStack(alignment: .leading, spacing: 2) {
+                    HStack(spacing: 6) {
+                        Image(systemName: "terminal")
+                            .font(.system(size: 11))
+                        Text("Execution logs")
+                            .font(.system(size: 13, weight: .semibold))
+                    }
+                    if !command.isEmpty {
+                        Text(command)
+                            .font(.system(size: 9, design: .monospaced))
+                            .foregroundColor(.secondary.opacity(0.7))
+                            .lineLimit(1)
+                            .truncationMode(.middle)
+                    }
                 }
                 Spacer()
                 Text("Ended at \(run.endedAt.split(separator: " ").last ?? "")")
