@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="GearboxUI/Resources/AppIcon.png" width="128" alt="Gearbox App Icon">
+</p>
+
 # Gearbox ⚙️
 
 Gearbox is a powerful macOS-native local automation manager. It allows you to schedule and manage background tasks with a clean, modern UI and a flexible CLI.
