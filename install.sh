@@ -5,7 +5,18 @@ echo "Setting up Gearbox..."
 
 # Detect current project directory
 PROJECT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-VENV_BIN="$PROJECT_DIR/venv/bin/python3"
+VENV_DIR="$PROJECT_DIR/venv"
+VENV_BIN="$VENV_DIR/bin/python3"
+
+if [ ! -d "$VENV_DIR" ]; then
+    echo "Creating virtual environment..."
+    python3 -m venv "$VENV_DIR"
+fi
+
+echo "Installing dependencies..."
+"$VENV_BIN" -m pip install --upgrade pip
+"$VENV_BIN" -m pip install -r "$PROJECT_DIR/requirements.txt"
+
 LAUNCH_DIR="$HOME/Library/LaunchAgents"
 
 mkdir -p "$LAUNCH_DIR"

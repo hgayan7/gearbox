@@ -20,11 +20,11 @@ Gearbox is a powerful macOS-native local automation manager. It allows you to sc
 
 1. Clone the repository:
    ```bash
-   git clone https://github.com/yourusername/gearbox.git
+   git clone https://github.com/hgayan7/gearbox.git
    cd gearbox
    ```
 
-2. Run the installation script:
+2. Run the installation script (this will create a virtual environment and install dependencies):
    ```bash
    ./install.sh
    ```
@@ -32,7 +32,7 @@ Gearbox is a powerful macOS-native local automation manager. It allows you to sc
 3. (Optional) Add the alias to your shell profile:
    ```bash
    # Add this to your ~/.zshrc or ~/.bash_profile
-   alias gearbox='/path/to/gearbox/venv/bin/python /path/to/gearbox/cli.py'
+   alias gearbox='$PWD/venv/bin/python3 $PWD/cli.py'
    ```
 
 ## Usage
@@ -42,7 +42,10 @@ Gearbox is a powerful macOS-native local automation manager. It allows you to sc
 - **Add a task**: `gearbox add my-task "*/5 * * * *" "echo hello"`
 - **List tasks**: `gearbox ls`
 - **View logs**: `gearbox logs my-task`
+- **View history**: `gearbox history my-task`
 - **Pause/Resume**: `gearbox pause my-task` / `gearbox resume my-task`
+- **Run now**: `gearbox run my-task`
+- **Stop task**: `gearbox stop my-task`
 
 ### UI
 
