@@ -11,6 +11,11 @@ let package = Package(
             name: "GearboxUI",
             dependencies: [],
             path: "Sources/GearboxUI"
+        ),
+        .testTarget(
+            name: "GearboxUITests",
+            dependencies: ["GearboxUI"],
+            path: "Tests/GearboxUITests"
         )
     ]
 )

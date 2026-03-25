@@ -55,6 +55,21 @@ To build the UI manually:
 ./build_ui.sh
 ```
 
+## Testing
+
+### Python Backend
+Testing is handled with `pytest`. To run the tests, use the provided virtual environment:
+```bash
+./venv/bin/python3 -m pytest tests/
+```
+
+### Swift UI
+Testing is handled with `XCTest`. Run tests from the `GearboxUI` directory:
+```bash
+cd GearboxUI
+swift test
+```
+
 ## License
 
 Standard Apache 2.0 License. See [LICENSE](LICENSE) for details.

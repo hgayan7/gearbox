@@ -1,16 +1,49 @@
 import Foundation
 import SQLite3
 
-struct Task: Identifiable {
+struct Task: Identifiable, Codable {
     let id: String
     let name: String
     let command: String
     let schedule: String
     let scheduleDesc: String
     var isPaused: Bool
+    
+    enum CodingKeys: String, CodingKey {
+        case id, name, command, schedule
+        case scheduleDesc = "schedule_desc"
+        case isPaused = "is_paused"
+    }
+    
+    init(id: String, name: String, command: String, schedule: String, scheduleDesc: String, isPaused: Bool) {
+        self.id = id
+        self.name = name
+        self.command = command
+        self.schedule = schedule
+        self.scheduleDesc = scheduleDesc
+        self.isPaused = isPaused
+    }
+    
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decode(String.self, forKey: .id)
+        name = try container.decode(String.self, forKey: .name)
+        command = try container.decode(String.self, forKey: .command)
+        schedule = try container.decode(String.self, forKey: .schedule)
+        scheduleDesc = try container.decode(String.self, forKey: .scheduleDesc)
+        
+        // Handle SQLite 0/1 as Bool
+        if let boolVal = try? container.decode(Bool.self, forKey: .isPaused) {
+            isPaused = boolVal
+        } else if let intVal = try? container.decode(Int.self, forKey: .isPaused) {
+            isPaused = intVal != 0
+        } else {
+            isPaused = false
+        }
+    }
 }
 
-struct Run: Identifiable {
+struct Run: Identifiable, Codable {
     let id: String
     let taskId: String
     let status: String
@@ -19,6 +52,14 @@ struct Run: Identifiable {
     let exitCode: Int
     let stdout: String
     let stderr: String
+    
+    enum CodingKeys: String, CodingKey {
+        case id, status, stdout, stderr
+        case taskId = "task_id"
+        case startedAt = "started_at"
+        case endedAt = "ended_at"
+        case exitCode = "exit_code"
+    }
 }
 
 class DatabaseManager: ObservableObject {
