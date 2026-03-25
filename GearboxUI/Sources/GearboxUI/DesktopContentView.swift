@@ -39,6 +39,7 @@ struct DesktopContentView: View {
         } detail: {
             if let selectedTaskId = selectedTaskId, let task = dbManager.tasks.first(where: { $0.id == selectedTaskId }) {
                 TaskDetailView(task: task, dbManager: dbManager)
+                    .id(task.id)
             } else {
                 DashboardOverviewView(dbManager: dbManager)
             }
@@ -206,6 +207,7 @@ struct TaskDetailView: View {
                 
                 if let id = selectedRunId, let run = runs.first(where: { $0.id == id }) {
                     RunDetailView(run: run, command: task.command, dbManager: dbManager)
+                        .id(run.id)
                         .frame(minHeight: 200)
                 } else {
                     VStack {

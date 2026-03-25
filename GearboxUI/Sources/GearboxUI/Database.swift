@@ -237,12 +237,12 @@ class DatabaseManager: ObservableObject {
         var stmt: OpaquePointer?
         if sqlite3_prepare_v2(db, updateQuery, -1, &stmt, nil) == SQLITE_OK {
             sqlite3_bind_int(stmt, 1, !task.isPaused ? 1 : 0)
-            let idString = task.id as NSString
-            sqlite3_bind_text(stmt, 2, idString.utf8String, -1, nil)
-            
-            if sqlite3_step(stmt) == SQLITE_DONE {
-                DispatchQueue.main.async {
-                    self.fetchData()
+            task.id.withCString { cString in
+                sqlite3_bind_text(stmt, 2, cString, -1, nil)
+                if sqlite3_step(stmt) == SQLITE_DONE {
+                    DispatchQueue.main.async {
+                        self.fetchData()
+                    }
                 }
             }
         }
@@ -302,29 +302,30 @@ class DatabaseManager: ObservableObject {
         let runQuery = "SELECT id, task_id, status, started_at, ended_at, exit_code, stdout, stderr FROM runs WHERE task_id = ? ORDER BY started_at DESC LIMIT 50;"
         var stmt: OpaquePointer?
         if sqlite3_prepare_v2(db, runQuery, -1, &stmt, nil) == SQLITE_OK {
-            let idString = taskId as NSString
-            sqlite3_bind_text(stmt, 1, idString.utf8String, -1, nil)
-            while sqlite3_step(stmt) == SQLITE_ROW {
-                let id = String(cString: sqlite3_column_text(stmt, 0))
-                let tId = String(cString: sqlite3_column_text(stmt, 1))
-                let status = String(cString: sqlite3_column_text(stmt, 2))
-                
-                let startedAtIso = String(cString: sqlite3_column_text(stmt, 3))
-                let startedAt = formatDisplayDate(startedAtIso)
-                
-                let endedPtr = sqlite3_column_text(stmt, 4)
-                let endedAtIso = endedPtr != nil ? String(cString: endedPtr!) : ""
-                let endedAt = formatDisplayDate(endedAtIso)
-                
-                let exitCode = Int(sqlite3_column_int(stmt, 5))
-                
-                let stdoutPtr = sqlite3_column_text(stmt, 6)
-                let stdout = stdoutPtr != nil ? String(cString: stdoutPtr!) : ""
-                
-                let stderrPtr = sqlite3_column_text(stmt, 7)
-                let stderr = stderrPtr != nil ? String(cString: stderrPtr!) : ""
-                
-                results.append(Run(id: id, taskId: tId, status: status, startedAt: startedAt, endedAt: endedAt, exitCode: exitCode, stdout: stdout, stderr: stderr))
+            taskId.withCString { cString in
+                sqlite3_bind_text(stmt, 1, cString, -1, nil)
+                while sqlite3_step(stmt) == SQLITE_ROW {
+                    let id = String(cString: sqlite3_column_text(stmt, 0))
+                    let tId = String(cString: sqlite3_column_text(stmt, 1))
+                    let status = String(cString: sqlite3_column_text(stmt, 2))
+                    
+                    let startedAtIso = String(cString: sqlite3_column_text(stmt, 3))
+                    let startedAt = formatDisplayDate(startedAtIso)
+                    
+                    let endedPtr = sqlite3_column_text(stmt, 4)
+                    let endedAtIso = endedPtr != nil ? String(cString: endedPtr!) : ""
+                    let endedAt = formatDisplayDate(endedAtIso)
+                    
+                    let exitCode = Int(sqlite3_column_int(stmt, 5))
+                    
+                    let stdoutPtr = sqlite3_column_text(stmt, 6)
+                    let stdout = stdoutPtr != nil ? String(cString: stdoutPtr!) : ""
+                    
+                    let stderrPtr = sqlite3_column_text(stmt, 7)
+                    let stderr = stderrPtr != nil ? String(cString: stderrPtr!) : ""
+                    
+                    results.append(Run(id: id, taskId: tId, status: status, startedAt: startedAt, endedAt: endedAt, exitCode: exitCode, stdout: stdout, stderr: stderr))
+                }
             }
         }
         sqlite3_finalize(stmt)
