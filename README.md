@@ -45,6 +45,30 @@ Gearbox is a powerful macOS-native local automation manager. It allows you to sc
    alias gearbox='$PWD/venv/bin/python3 $PWD/cli.py'
    ```
 
+### Homebrew (Recommended)
+
+To install Gearbox via Homebrew, you can use the official tap. This will automatically handle dependencies and build the UI from source.
+
+```bash
+# 1. Add the Gearbox tap
+brew tap hgayan7/gearbox
+
+# 2. Install Gearbox
+brew install gearbox
+
+# 3. Start the background service
+brew services start gearbox
+```
+
+After installation, the menu bar app will be available at:
+`open /opt/homebrew/opt/gearbox/libexec/Gearbox.app`
+
+#### Note for Distribution
+If you wish to provide a Homebrew Cask for binary installation:
+1. Run `./scripts/package.sh` to create a `gearbox-1.0.0.zip`.
+2. Upload the ZIP to a GitHub Release.
+3. Update `Casks/gearbox.rb` with the new URL and SHA256.
+
 ## Usage
 
 ### CLI
