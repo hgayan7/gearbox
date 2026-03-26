@@ -1,6 +1,6 @@
 cask "gearbox" do
   version "1.0.0"
-  sha256 "a6f346748d77b51d527265ca660cba7df1198eddcae6b5d368fc8580c5db0a62"
+  sha256 "01b5ace64b1a174bf24d1ef5b4f29a03b33e694869dc4c082cab8ebfb1a48919"
 
   url "https://github.com/hgayan7/gearbox/releases/download/v#{version}/gearbox-#{version}.zip"
   name "Gearbox"
@@ -8,6 +8,7 @@ cask "gearbox" do
   homepage "https://github.com/hgayan7/gearbox"
 
   app "Gearbox.app"
+  binary "Gearbox.app/Contents/MacOS/gearbox"
 
   zap trash: [
     "~/.gearbox",
