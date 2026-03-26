@@ -90,7 +90,7 @@ cat > "$CONTENTS/Info.plist" <<EOF
     <key>CFBundlePackageType</key>
     <string>APPL</string>
     <key>CFBundleShortVersionString</key>
-    <string>1.0.0</string>
+    <string>1.0.1</string>
     <key>CFBundleVersion</key>
     <string>1</string>
     <key>LSUIElement</key>
@@ -105,7 +105,7 @@ codesign --force --deep -s - "$APP_BUNDLE"
 
 echo "🗜 Compressing into ZIP..."
 cd "$BUILD_DIR"
-zip -r "gearbox-1.0.0.zip" "$APP_NAME.app"
+zip -r "gearbox-1.0.1.zip" "$APP_NAME.app"
 
-echo "✅ Standalone Packaging complete: $BUILD_DIR/gearbox-1.0.0.zip"
-shasum -a 256 "gearbox-1.0.0.zip"
+echo "✅ Standalone Packaging complete: $BUILD_DIR/gearbox-1.0.1.zip"
+shasum -a 256 "gearbox-1.0.1.zip"
