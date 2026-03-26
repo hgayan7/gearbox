@@ -6,7 +6,7 @@ class Gearbox < Formula
   # Official Release URL
   url "https://github.com/hgayan7/gearbox/archive/refs/tags/v1.0.0.tar.gz"
   version "1.0.0"
-  sha256 "2a9f2c867a83fb1eb674075b4c6908384918564289dc6269bb612f3cd910a51f"
+  sha256 "fe8baf2553cd7673f6d00e228edb8e1145a898f4892be45ba5d63b4a729cff59"
   license "Apache-2.0"
 
   depends_on "python@3.11"
