@@ -10,7 +10,7 @@ set -e
 PROJECT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 BUILD_DIR="$PROJECT_DIR/dist"
 APP_NAME="Gearbox"
-VERSION="1.0.2"
+VERSION="1.0.3"
 APP_BUNDLE="$BUILD_DIR/$APP_NAME.app"
 CONTENTS="$APP_BUNDLE/Contents"
 RESOURCES="$CONTENTS/Resources"
@@ -47,12 +47,7 @@ echo "pip: Installing dependencies into bundle..."
 "$RESOURCES/venv/bin/pip" install click apscheduler cron-descriptor pytz six tzlocal
 
 echo "📜 Creating CLI Shim..."
-cat > "$MACOS/gearbox" <<EOF
-#!/bin/bash
-# Gearbox CLI Shim
-export PATH="\$PATH"
-exec "\$(dirname "\$0")/../Resources/venv/bin/python3" "\$(dirname "\$0")/../Resources/python/cli.py" "\$@"
-EOF
+cp "$PROJECT_DIR/scripts/gearbox-shim.sh" "$MACOS/gearbox"
 chmod +x "$MACOS/gearbox"
 
 echo "🎨 Generating App Icon..."
@@ -93,7 +88,7 @@ cat > "$CONTENTS/Info.plist" <<EOF
     <key>CFBundleShortVersionString</key>
     <string>$VERSION</string>
     <key>CFBundleVersion</key>
-    <string>2</string>
+    <string>3</string>
     <key>LSUIElement</key>
     <true/>
 </dict>
