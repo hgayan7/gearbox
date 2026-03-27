@@ -9,6 +9,16 @@ from .db import get_connection
 
 class TaskManager:
     @staticmethod
+    def _pid_exists(pid: int) -> bool:
+        try:
+            os.kill(pid, 0)
+            return True
+        except ProcessLookupError:
+            return False
+        except PermissionError:
+            return True
+
+    @staticmethod
     def add_task(name: str, schedule: str, command: str) -> str:
         conn = get_connection()
         cursor = conn.cursor()
@@ -170,6 +180,25 @@ class TaskManager:
             conn.commit()
         finally:
             conn.close()
+
+    @staticmethod
+    def reconcile_stale_runs() -> int:
+        """Finalize runs that are still marked running but whose process has already exited."""
+        conn = get_connection()
+        cursor = conn.cursor()
+        try:
+            cursor.execute("SELECT id, pid FROM runs WHERE status = 'running' AND pid IS NOT NULL")
+            stale_run_ids = []
+            for row in cursor.fetchall():
+                if not TaskManager._pid_exists(row["pid"]):
+                    stale_run_ids.append(row["id"])
+        finally:
+            conn.close()
+
+        for run_id in stale_run_ids:
+            TaskManager.log_run_end(run_id, "failed", -2)
+
+        return len(stale_run_ids)
 
     @staticmethod
     def stop_task(task_id: str):

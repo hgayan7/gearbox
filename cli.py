@@ -36,6 +36,7 @@ def parse_smart_schedule(s: str) -> str:
 def cli():
     """Gearbox: A macOS local automation manager."""
     init_db()
+    TaskManager.reconcile_stale_runs()
 
 @cli.command()
 @click.argument('name')
@@ -170,7 +171,15 @@ def run(name, bg):
         import sys
         import os
         script_path = os.path.realpath(__file__)
-        subprocess.Popen([sys.executable, script_path, "run", name])
+        with open(os.devnull, "r") as devnull_in, open(os.devnull, "a") as devnull_out:
+            subprocess.Popen(
+                [sys.executable, script_path, "run", name],
+                stdin=devnull_in,
+                stdout=devnull_out,
+                stderr=devnull_out,
+                close_fds=True,
+                start_new_session=True,
+            )
         return
 
     TaskManager.execute_task(task["id"], task["command"])

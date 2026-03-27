@@ -50,6 +50,10 @@ def run_task(task_id: str, command: str):
 
 def sync_tasks_once(scheduler: BackgroundScheduler, task_cron_map: dict[str, str]):
     """Sync active database tasks into APScheduler exactly once."""
+    reconciled_runs = TaskManager.reconcile_stale_runs()
+    if reconciled_runs:
+        logger.warning("Reconciled %s stale running run(s)", reconciled_runs)
+
     tasks = TaskManager.get_tasks()
     active_jobs = {job.id: job for job in scheduler.get_jobs()}
     db_task_ids = set()

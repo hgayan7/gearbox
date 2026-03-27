@@ -56,3 +56,30 @@ def test_logging_runs(test_db):
     assert runs[0]["status"] == "success"
     assert runs[0]["exit_code"] == 0
     assert runs[0]["stdout"] == "output"
+
+def test_reconcile_stale_runs_marks_dead_process_failed(test_db, monkeypatch):
+    task_id = TaskManager.add_task("Stale Run", "* * * * *", "echo 'hello'")
+    run_id = TaskManager.log_run_start(task_id)
+    TaskManager.update_run_pid(run_id, 12345)
+
+    monkeypatch.setattr(TaskManager, "_pid_exists", staticmethod(lambda pid: False))
+
+    reconciled = TaskManager.reconcile_stale_runs()
+
+    assert reconciled == 1
+    runs = TaskManager.get_task_runs(task_id)
+    assert runs[0]["status"] == "failed"
+    assert runs[0]["exit_code"] == -2
+
+def test_reconcile_stale_runs_keeps_live_process_running(test_db, monkeypatch):
+    task_id = TaskManager.add_task("Live Run", "* * * * *", "echo 'hello'")
+    run_id = TaskManager.log_run_start(task_id)
+    TaskManager.update_run_pid(run_id, 12345)
+
+    monkeypatch.setattr(TaskManager, "_pid_exists", staticmethod(lambda pid: True))
+
+    reconciled = TaskManager.reconcile_stale_runs()
+
+    assert reconciled == 0
+    runs = TaskManager.get_task_runs(task_id)
+    assert runs[0]["status"] == "running"
