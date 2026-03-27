@@ -1,6 +1,8 @@
 #!/bin/bash
 set -e
 
+VERSION="1.0.2"
+
 echo "Setting up Gearbox..."
 
 # Detect current project directory
@@ -88,8 +90,10 @@ cat > "$PROJECT_DIR/GearboxUI/build/GearboxUI.app/Contents/Info.plist" <<EOF
     <string>com.gearbox.ui</string>
     <key>CFBundleName</key>
     <string>Gearbox</string>
+    <key>CFBundleShortVersionString</key>
+    <string>$VERSION</string>
     <key>CFBundleVersion</key>
-    <string>1.0</string>
+    <string>2</string>
     <key>LSUIElement</key>
     <true/>
 </dict>

@@ -10,6 +10,7 @@ set -e
 PROJECT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 BUILD_DIR="$PROJECT_DIR/dist"
 APP_NAME="Gearbox"
+VERSION="1.0.2"
 APP_BUNDLE="$BUILD_DIR/$APP_NAME.app"
 CONTENTS="$APP_BUNDLE/Contents"
 RESOURCES="$CONTENTS/Resources"
@@ -90,9 +91,9 @@ cat > "$CONTENTS/Info.plist" <<EOF
     <key>CFBundlePackageType</key>
     <string>APPL</string>
     <key>CFBundleShortVersionString</key>
-    <string>1.0.1</string>
+    <string>$VERSION</string>
     <key>CFBundleVersion</key>
-    <string>1</string>
+    <string>2</string>
     <key>LSUIElement</key>
     <true/>
 </dict>
@@ -105,7 +106,7 @@ codesign --force --deep -s - "$APP_BUNDLE"
 
 echo "🗜 Compressing into ZIP..."
 cd "$BUILD_DIR"
-zip -r "gearbox-1.0.1.zip" "$APP_NAME.app"
+zip -r "gearbox-$VERSION.zip" "$APP_NAME.app"
 
-echo "✅ Standalone Packaging complete: $BUILD_DIR/gearbox-1.0.1.zip"
-shasum -a 256 "gearbox-1.0.1.zip"
+echo "✅ Standalone Packaging complete: $BUILD_DIR/gearbox-$VERSION.zip"
+shasum -a 256 "gearbox-$VERSION.zip"

@@ -1,6 +1,8 @@
 #!/bin/bash
 set -e
 
+VERSION="1.0.2"
+
 echo "Building GearboxUI Swift App..."
 PROJECT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$PROJECT_DIR/GearboxUI"
@@ -46,8 +48,10 @@ cat > build/GearboxUI.app/Contents/Info.plist <<EOF
     <string>com.gearbox.ui</string>
     <key>CFBundleName</key>
     <string>Gearbox</string>
+    <key>CFBundleShortVersionString</key>
+    <string>$VERSION</string>
     <key>CFBundleVersion</key>
-    <string>1.0</string>
+    <string>2</string>
     <key>LSUIElement</key>
     <true/>
 </dict>
