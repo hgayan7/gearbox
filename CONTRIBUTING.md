@@ -19,6 +19,16 @@ If you find a bug, please create an issue on GitHub with:
 - Steps to reproduce the bug.
 - Any relevant logs or screenshots.
 
+## Homebrew Distribution
+
+The repository includes a cask at `Casks/gearbox.rb`, but this repository is not a standalone Homebrew tap. User-facing install docs should point to the raw cask URL:
+
+```bash
+brew install --cask https://raw.githubusercontent.com/hgayan7/gearbox/main/Casks/gearbox.rb
+```
+
+If Gearbox later gets a dedicated tap, it should be published from a separate repository named `homebrew-gearbox` so `brew tap hgayan7/gearbox` works as expected.
+
 ## Code of Conduct
 
 Please be respectful and professional in all interactions within the Gearbox community.

@@ -51,17 +51,16 @@ https://github.com/user-attachments/assets/51500ad3-2145-4a78-9967-f05fe34f038b
 
 ### Homebrew (Recommended)
 
-To install Gearbox via Homebrew, you can use the official tap. This will automatically install the standalone App and link the `gearbox` CLI command.
+Install Gearbox directly from the public cask in this repository. This uses Homebrew over public HTTPS and does not require GitHub credentials.
 
 ```bash
-# 1. Add the Gearbox tap (only needed once)
-brew tap hgayan7/gearbox
-
-# 2. Install Gearbox
-brew install --cask gearbox
+# Install Gearbox from the cask definition in this repo
+brew install --cask https://raw.githubusercontent.com/hgayan7/gearbox/main/Casks/gearbox.rb
 ```
 
 After installation, the Gearbox app will be in your `/Applications` folder, and the `gearbox` command will be available in your terminal.
+
+If a dedicated Homebrew tap is added later, it should live in a separate repository named `homebrew-gearbox`. The previous `brew tap hgayan7/gearbox` command is not valid for this repository layout.
 
 ## Usage
 
