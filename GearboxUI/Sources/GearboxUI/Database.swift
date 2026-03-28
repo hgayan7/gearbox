@@ -86,43 +86,49 @@ class DatabaseManager: ObservableObject {
             print("Error opening database")
         }
     }
+
+    private func bundledResourcePath(_ relativePath: String) -> String? {
+        guard let resourceURL = Bundle.main.resourceURL else {
+            return nil
+        }
+
+        let bundledPath = resourceURL.appendingPathComponent(relativePath).path
+        return FileManager.default.fileExists(atPath: bundledPath) ? bundledPath : nil
+    }
     
     private func getPythonPath() -> String {
-        // Try to find the project root from the executable path (if running from build folder)
-        // OR default to a standard location if we add one later.
-        // For now, let's assume it's in the same parent dir as the .app bundle 
-        // which is standard for this project's layout.
-        
-        // This is a bit of a heuristic for the local dev/install setup
+        if let bundledPython = bundledResourcePath("venv/bin/python3") {
+            return bundledPython
+        }
+
         let homeDir = FileManager.default.homeDirectoryForCurrentUser
         let defaultPath = homeDir.appendingPathComponent("Documents/Gearbox/venv/bin/python").path
-        
         if FileManager.default.fileExists(atPath: defaultPath) {
             return defaultPath
         }
-        
-        // Fallback to expecting it in the same directory as the app's parent
+
         let bundlePath = Bundle.main.bundleURL
         let projectRoot = bundlePath.deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
         let localVenv = projectRoot.appendingPathComponent("venv/bin/python").path
-        
         if FileManager.default.fileExists(atPath: localVenv) {
             return localVenv
         }
-        
-        return "python3" // Last resort: system python
+
+        return "python3"
     }
     
     private func getScriptPath(_ name: String) -> String {
+        if let bundledScript = bundledResourcePath("python/\(name)") {
+            return bundledScript
+        }
+
         let bundlePath = Bundle.main.bundleURL
         let projectRoot = bundlePath.deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
         let localScript = projectRoot.appendingPathComponent(name).path
-        
         if FileManager.default.fileExists(atPath: localScript) {
             return localScript
         }
-        
-        // Fallback to home dir
+
         let homeDir = FileManager.default.homeDirectoryForCurrentUser
         return homeDir.appendingPathComponent("Documents/Gearbox/\(name)").path
     }
