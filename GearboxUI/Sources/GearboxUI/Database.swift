@@ -1,5 +1,6 @@
 import Foundation
 import SQLite3
+import Darwin
 
 struct Task: Identifiable, Codable {
     let id: String
@@ -72,6 +73,7 @@ class DatabaseManager: ObservableObject {
     
     private var db: OpaquePointer?
     var daemonProcess: Process?
+    private var managesDaemonProcess = false
     
     private init() {
         openDB()
@@ -124,15 +126,37 @@ class DatabaseManager: ObservableObject {
         let homeDir = FileManager.default.homeDirectoryForCurrentUser
         return homeDir.appendingPathComponent("Documents/Gearbox/\(name)").path
     }
+
+    private func isLaunchdDaemonLoaded() -> Bool {
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/bin/launchctl")
+        process.arguments = ["print", "gui/\(getuid())/com.gearbox.daemon"]
+        process.standardOutput = Pipe()
+        process.standardError = Pipe()
+
+        do {
+            try process.run()
+            process.waitUntilExit()
+            return process.terminationStatus == 0
+        } catch {
+            return false
+        }
+    }
     
     func startDaemon() {
         if daemonProcess != nil { return }
+        if isLaunchdDaemonLoaded() {
+            print("Using launchd-managed daemon.")
+            return
+        }
+
         let process = Process()
         process.executableURL = URL(fileURLWithPath: getPythonPath())
         process.arguments = [getScriptPath("daemon.py")]
         do {
             try process.run()
             self.daemonProcess = process
+            self.managesDaemonProcess = true
             print("Daemon started as child process.")
         } catch {
             print("Failed to start daemon: \(error)")
@@ -140,8 +164,10 @@ class DatabaseManager: ObservableObject {
     }
     
     func stopDaemon() {
+        guard managesDaemonProcess else { return }
         daemonProcess?.terminate()
         daemonProcess = nil
+        managesDaemonProcess = false
         print("Daemon stopped.")
     }
     

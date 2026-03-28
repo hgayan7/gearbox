@@ -1,3 +1,4 @@
+import datetime
 import logging
 import os
 import sys
@@ -11,6 +12,9 @@ from core.manager import TaskManager
 
 SYNC_INTERVAL_SECONDS = 10
 MISFIRE_GRACE_TIME_SECONDS = int(os.getenv("GEARBOX_MISFIRE_GRACE_TIME_SECONDS", str(12 * 60 * 60)))
+RECOVERY_WINDOW_THRESHOLD_SECONDS = int(
+    os.getenv("GEARBOX_RECOVERY_WINDOW_THRESHOLD_SECONDS", str(SYNC_INTERVAL_SECONDS * 3))
+)
 logger = logging.getLogger("gearbox.daemon")
 
 
@@ -48,7 +52,73 @@ def build_scheduler() -> BackgroundScheduler:
 def run_task(task_id: str, command: str):
     TaskManager.execute_task(task_id, command)
 
-def sync_tasks_once(scheduler: BackgroundScheduler, task_cron_map: dict[str, str]):
+
+def _now_in_timezone(timezone) -> datetime.datetime:
+    return datetime.datetime.now(timezone)
+
+
+def _get_latest_scheduled_fire_time(trigger: CronTrigger, now: datetime.datetime, lookback_start: datetime.datetime):
+    previous_fire_time = None
+    cursor = lookback_start
+    latest_fire_time = None
+
+    while True:
+        next_fire_time = trigger.get_next_fire_time(previous_fire_time, cursor)
+        if next_fire_time is None or next_fire_time > now:
+            return latest_fire_time
+
+        latest_fire_time = next_fire_time
+        previous_fire_time = next_fire_time
+        cursor = next_fire_time
+
+
+def _parse_started_at(started_at: str, timezone):
+    if not started_at:
+        return None
+
+    parsed = datetime.datetime.fromisoformat(started_at)
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=timezone)
+    return parsed.astimezone(timezone)
+
+
+def _recover_missed_run_if_needed(
+    task: dict,
+    cron_str: str,
+    scheduler: BackgroundScheduler,
+    recovery_window_start: datetime.datetime,
+):
+    last_started_at = TaskManager.get_latest_run_started_at(task["id"])
+    if not last_started_at:
+        return
+
+    now = _now_in_timezone(scheduler.timezone)
+    lookback_start = max(
+        recovery_window_start,
+        now - datetime.timedelta(seconds=MISFIRE_GRACE_TIME_SECONDS),
+    )
+    trigger = CronTrigger.from_crontab(cron_str, timezone=scheduler.timezone)
+    latest_fire_time = _get_latest_scheduled_fire_time(trigger, now, lookback_start)
+    if latest_fire_time is None or latest_fire_time >= now:
+        return
+
+    latest_run_started_at = _parse_started_at(last_started_at, scheduler.timezone)
+    if latest_run_started_at is not None and latest_run_started_at >= latest_fire_time:
+        return
+
+    logger.warning(
+        "Recovering missed run for task '%s' scheduled at %s",
+        task["name"],
+        latest_fire_time,
+    )
+    run_task(task["id"], task["command"])
+
+
+def sync_tasks_once(
+    scheduler: BackgroundScheduler,
+    task_cron_map: dict[str, str],
+    recovery_window_start: datetime.datetime | None = None,
+):
     """Sync active database tasks into APScheduler exactly once."""
     reconciled_runs = TaskManager.reconcile_stale_runs()
     if reconciled_runs:
@@ -64,6 +134,7 @@ def sync_tasks_once(scheduler: BackgroundScheduler, task_cron_map: dict[str, str
         is_paused = bool(task["is_paused"])
         cron_str = task["schedule"]
         task_job_ids = [jid for jid in active_jobs.keys() if jid.startswith(task_id)]
+        crons = [c.strip() for c in cron_str.split("|") if c.strip()]
 
         if is_paused:
             for jid in task_job_ids:
@@ -74,41 +145,44 @@ def sync_tasks_once(scheduler: BackgroundScheduler, task_cron_map: dict[str, str
             continue
 
         needs_scheduling = not task_job_ids or task_cron_map.get(task_id) != cron_str
-        if not needs_scheduling:
-            continue
+        if needs_scheduling:
+            for jid in task_job_ids:
+                scheduler.remove_job(jid)
+                active_jobs.pop(jid, None)
+                logger.info("Removed outdated job %s for task '%s'", jid, task["name"])
 
-        for jid in task_job_ids:
-            scheduler.remove_job(jid)
-            active_jobs.pop(jid, None)
-            logger.info("Removed outdated job %s for task '%s'", jid, task["name"])
+            success = True
+            for i, cron in enumerate(crons):
+                try:
+                    job = scheduler.add_job(
+                        run_task,
+                        trigger=CronTrigger.from_crontab(cron, timezone=scheduler.timezone),
+                        id=f"{task_id}_{i}",
+                        args=[task_id, task["command"]],
+                        replace_existing=True,
+                        misfire_grace_time=MISFIRE_GRACE_TIME_SECONDS,
+                        coalesce=True,
+                        max_instances=1,
+                    )
+                    logger.info(
+                        "Scheduled task '%s' with cron '%s' as job %s; next run at %s",
+                        task["name"],
+                        cron,
+                        job.id,
+                        job.next_run_time,
+                    )
+                except ValueError as e:
+                    logger.error("Error scheduling task '%s' with cron '%s': %s", task["name"], cron, e)
+                    success = False
 
-        crons = [c.strip() for c in cron_str.split("|") if c.strip()]
-        success = True
-        for i, cron in enumerate(crons):
-            try:
-                job = scheduler.add_job(
-                    run_task,
-                    trigger=CronTrigger.from_crontab(cron, timezone=scheduler.timezone),
-                    id=f"{task_id}_{i}",
-                    args=[task_id, task["command"]],
-                    replace_existing=True,
-                    misfire_grace_time=MISFIRE_GRACE_TIME_SECONDS,
-                    coalesce=True,
-                    max_instances=1,
-                )
-                logger.info(
-                    "Scheduled task '%s' with cron '%s' as job %s; next run at %s",
-                    task["name"],
-                    cron,
-                    job.id,
-                    job.next_run_time,
-                )
-            except ValueError as e:
-                logger.error("Error scheduling task '%s' with cron '%s': %s", task["name"], cron, e)
-                success = False
+            if not success:
+                continue
 
-        if success:
             task_cron_map[task_id] = cron_str
+
+        if recovery_window_start is not None:
+            for cron in crons:
+                _recover_missed_run_if_needed(task, cron, scheduler, recovery_window_start)
 
     for job_id in list(active_jobs.keys()):
         parts = job_id.rsplit("_", 1)
@@ -122,13 +196,35 @@ def sync_tasks_once(scheduler: BackgroundScheduler, task_cron_map: dict[str, str
     return task_cron_map
 
 
+def _get_recovery_window_start(
+    previous_sync_at: datetime.datetime | None,
+    now: datetime.datetime,
+) -> datetime.datetime | None:
+    if previous_sync_at is None:
+        return now - datetime.timedelta(seconds=MISFIRE_GRACE_TIME_SECONDS)
+
+    gap = (now - previous_sync_at).total_seconds()
+    if gap > RECOVERY_WINDOW_THRESHOLD_SECONDS:
+        logger.warning("Detected scheduler gap of %.1fs; recovering missed runs", gap)
+        return previous_sync_at
+
+    return None
+
+
 def sync_tasks(scheduler: BackgroundScheduler):
     """Poll the database forever and keep APScheduler in sync."""
     task_cron_map = {}
+    previous_sync_at = None
 
     while True:
         try:
-            task_cron_map = sync_tasks_once(scheduler, task_cron_map)
+            now = _now_in_timezone(scheduler.timezone)
+            task_cron_map = sync_tasks_once(
+                scheduler,
+                task_cron_map,
+                recovery_window_start=_get_recovery_window_start(previous_sync_at, now),
+            )
+            previous_sync_at = now
         except Exception:
             logger.exception("Sync error")
 

@@ -1,10 +1,11 @@
 import sqlite3
 from sqlite3 import Connection
-from .config import DB_PATH
+from . import config
 
 def get_connection() -> Connection:
     """Returns a SQLite connection with row factory enabled."""
-    conn = sqlite3.connect(DB_PATH, check_same_thread=False)
+    config.ensure_runtime_paths()
+    conn = sqlite3.connect(config.DB_PATH, check_same_thread=False)
     conn.row_factory = sqlite3.Row
     # Enable foreign keys
     conn.execute("PRAGMA foreign_keys = ON")
@@ -12,6 +13,7 @@ def get_connection() -> Connection:
 
 def init_db():
     """Initializes the SQLite database with the required schema."""
+    config.ensure_runtime_paths()
     conn = get_connection()
     cursor = conn.cursor()
     
@@ -69,4 +71,4 @@ def init_db():
 
 if __name__ == "__main__":
     init_db()
-    print(f"Initialized Gearbox database at {DB_PATH}")
+    print(f"Initialized Gearbox database at {config.DB_PATH}")

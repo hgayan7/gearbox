@@ -83,3 +83,16 @@ def test_reconcile_stale_runs_keeps_live_process_running(test_db, monkeypatch):
     assert reconciled == 0
     runs = TaskManager.get_task_runs(task_id)
     assert runs[0]["status"] == "running"
+
+
+def test_get_latest_run_started_at_returns_most_recent_start(test_db):
+    task_id = TaskManager.add_task("Latest Run", "* * * * *", "echo 'hello'")
+    first_run_id = TaskManager.log_run_start(task_id)
+    TaskManager.log_run_end(first_run_id, "success", 0, "first", "")
+    latest_run_id = TaskManager.log_run_start(task_id)
+
+    latest_started_at = TaskManager.get_latest_run_started_at(task_id)
+    latest_run = TaskManager.get_task_runs(task_id, limit=1)[0]
+
+    assert latest_started_at == latest_run["started_at"]
+    assert latest_run["id"] == latest_run_id

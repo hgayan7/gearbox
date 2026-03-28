@@ -153,6 +153,26 @@ class TaskManager:
             return [dict(row) for row in rows]
         finally:
             conn.close()
+
+    @staticmethod
+    def get_latest_run_started_at(task_id: str) -> Optional[str]:
+        conn = get_connection()
+        cursor = conn.cursor()
+        try:
+            cursor.execute(
+                '''
+                SELECT started_at
+                FROM runs
+                WHERE task_id = ?
+                ORDER BY started_at DESC
+                LIMIT 1
+                ''',
+                (task_id,),
+            )
+            row = cursor.fetchone()
+            return row["started_at"] if row else None
+        finally:
+            conn.close()
             
     @staticmethod
     def get_recent_runs(limit: int = 10) -> List[Dict[str, Any]]:
