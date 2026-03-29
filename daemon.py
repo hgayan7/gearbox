@@ -1,6 +1,7 @@
 import datetime
 import logging
 import os
+from pathlib import Path
 import sys
 import time
 from apscheduler.schedulers.background import BackgroundScheduler
@@ -19,10 +20,29 @@ logger = logging.getLogger("gearbox.daemon")
 
 
 def configure_logging():
+    log_dir = Path.home() / ".gearbox"
+    log_dir.mkdir(parents=True, exist_ok=True)
+
+    handlers = []
+
+    try:
+        handlers.append(logging.FileHandler(log_dir / "daemon.log"))
+    except OSError:
+        pass
+
+    try:
+        if sys.stdout and sys.stdout.isatty():
+            handlers.append(logging.StreamHandler(sys.stdout))
+    except Exception:
+        pass
+
+    if not handlers:
+        handlers.append(logging.StreamHandler(sys.stdout))
+
     logging.basicConfig(
         level=logging.INFO,
         format="%(asctime)s %(levelname)s %(message)s",
-        stream=sys.stdout,
+        handlers=handlers,
         force=True,
     )
 

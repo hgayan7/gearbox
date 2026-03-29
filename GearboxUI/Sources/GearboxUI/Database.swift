@@ -65,6 +65,7 @@ struct Run: Identifiable, Codable {
 
 class DatabaseManager: ObservableObject {
     static let shared = DatabaseManager()
+    private let daemonLabel = "com.gearbox.daemon"
     
     @Published var tasks: [Task] = []
     @Published var recentRuns: [Run] = []
@@ -133,10 +134,109 @@ class DatabaseManager: ObservableObject {
         return homeDir.appendingPathComponent("Documents/Gearbox/\(name)").path
     }
 
+    private func launchAgentsDirectory() -> URL {
+        FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Library/LaunchAgents", isDirectory: true)
+    }
+
+    private func daemonPlistURL() -> URL {
+        launchAgentsDirectory().appendingPathComponent("\(daemonLabel).plist")
+    }
+
+    private func xmlEscaped(_ value: String) -> String {
+        value
+            .replacingOccurrences(of: "&", with: "&amp;")
+            .replacingOccurrences(of: "<", with: "&lt;")
+            .replacingOccurrences(of: ">", with: "&gt;")
+            .replacingOccurrences(of: "\"", with: "&quot;")
+            .replacingOccurrences(of: "'", with: "&apos;")
+    }
+
+    private func daemonPlistContents() -> String {
+        let stdoutPath = NSString(string: "~/.gearbox/daemon.log").expandingTildeInPath
+        let stderrPath = NSString(string: "~/.gearbox/daemon-error.log").expandingTildeInPath
+        let arguments = [getPythonPath(), getScriptPath("daemon.py")]
+            .map { "<string>\(xmlEscaped($0))</string>" }
+            .joined(separator: "\n        ")
+
+        return """
+        <?xml version="1.0" encoding="UTF-8"?>
+        <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+        <plist version="1.0">
+        <dict>
+            <key>Label</key>
+            <string>\(daemonLabel)</string>
+            <key>ProgramArguments</key>
+            <array>
+                \(arguments)
+            </array>
+            <key>RunAtLoad</key>
+            <true/>
+            <key>KeepAlive</key>
+            <true/>
+            <key>StandardErrorPath</key>
+            <string>\(xmlEscaped(stderrPath))</string>
+            <key>StandardOutPath</key>
+            <string>\(xmlEscaped(stdoutPath))</string>
+        </dict>
+        </plist>
+        """
+    }
+
+    @discardableResult
+    private func runLaunchctl(_ arguments: [String]) -> Bool {
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/bin/launchctl")
+        process.arguments = arguments
+        process.standardOutput = Pipe()
+        process.standardError = Pipe()
+
+        do {
+            try process.run()
+            process.waitUntilExit()
+            return process.terminationStatus == 0
+        } catch {
+            return false
+        }
+    }
+
+    private func ensureLaunchdDaemonInstalled() -> Bool {
+        let fileManager = FileManager.default
+        let plistURL = daemonPlistURL()
+        let plistContents = daemonPlistContents()
+        var shouldReload = false
+
+        do {
+            try fileManager.createDirectory(at: launchAgentsDirectory(), withIntermediateDirectories: true)
+
+            let currentContents = try? String(contentsOf: plistURL, encoding: .utf8)
+            if currentContents != plistContents {
+                try plistContents.write(to: plistURL, atomically: true, encoding: .utf8)
+                shouldReload = true
+            }
+        } catch {
+            print("Failed to write daemon plist: \(error)")
+            return false
+        }
+
+        if shouldReload {
+            _ = runLaunchctl(["unload", plistURL.path])
+        }
+
+        if isLaunchdDaemonLoaded() {
+            return true
+        }
+
+        guard runLaunchctl(["load", plistURL.path]) else {
+            return false
+        }
+
+        return isLaunchdDaemonLoaded()
+    }
+
     private func isLaunchdDaemonLoaded() -> Bool {
         let process = Process()
         process.executableURL = URL(fileURLWithPath: "/bin/launchctl")
-        process.arguments = ["print", "gui/\(getuid())/com.gearbox.daemon"]
+        process.arguments = ["print", "gui/\(getuid())/\(daemonLabel)"]
         process.standardOutput = Pipe()
         process.standardError = Pipe()
 
@@ -151,7 +251,7 @@ class DatabaseManager: ObservableObject {
     
     func startDaemon() {
         if daemonProcess != nil { return }
-        if isLaunchdDaemonLoaded() {
+        if ensureLaunchdDaemonInstalled() {
             print("Using launchd-managed daemon.")
             return
         }
