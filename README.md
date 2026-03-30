@@ -55,7 +55,7 @@ Install Gearbox directly from the public cask in this repository. This uses Home
 
 ```bash
 # Install Gearbox from the cask definition in this repo
-brew install --cask https://raw.githubusercontent.com/hgayan7/gearbox/main/Casks/gearbox.rb
+brew install --cask hgayan7/gearbox/gearbox
 ```
 
 After installation, the Gearbox app will be in your `/Applications` folder, and the `gearbox` command will be available in your terminal.
