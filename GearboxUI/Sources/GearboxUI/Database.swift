@@ -65,7 +65,6 @@ struct Run: Identifiable, Codable {
 
 class DatabaseManager: ObservableObject {
     static let shared = DatabaseManager()
-    private let daemonLabel = "com.gearbox.daemon"
     
     @Published var tasks: [Task] = []
     @Published var recentRuns: [Run] = []
@@ -73,8 +72,6 @@ class DatabaseManager: ObservableObject {
     @Published var hasFailures: Bool = false
     
     private var db: OpaquePointer?
-    var daemonProcess: Process?
-    private var managesDaemonProcess = false
     
     private init() {
         openDB()
@@ -134,147 +131,16 @@ class DatabaseManager: ObservableObject {
         return homeDir.appendingPathComponent("Documents/Gearbox/\(name)").path
     }
 
-    private func launchAgentsDirectory() -> URL {
-        FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Library/LaunchAgents", isDirectory: true)
-    }
-
-    private func daemonPlistURL() -> URL {
-        launchAgentsDirectory().appendingPathComponent("\(daemonLabel).plist")
-    }
-
-    private func xmlEscaped(_ value: String) -> String {
-        value
-            .replacingOccurrences(of: "&", with: "&amp;")
-            .replacingOccurrences(of: "<", with: "&lt;")
-            .replacingOccurrences(of: ">", with: "&gt;")
-            .replacingOccurrences(of: "\"", with: "&quot;")
-            .replacingOccurrences(of: "'", with: "&apos;")
-    }
-
-    private func daemonPlistContents() -> String {
-        let stdoutPath = NSString(string: "~/.gearbox/daemon.log").expandingTildeInPath
-        let stderrPath = NSString(string: "~/.gearbox/daemon-error.log").expandingTildeInPath
-        let arguments = [getPythonPath(), getScriptPath("daemon.py")]
-            .map { "<string>\(xmlEscaped($0))</string>" }
-            .joined(separator: "\n        ")
-
-        return """
-        <?xml version="1.0" encoding="UTF-8"?>
-        <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-        <plist version="1.0">
-        <dict>
-            <key>Label</key>
-            <string>\(daemonLabel)</string>
-            <key>ProgramArguments</key>
-            <array>
-                \(arguments)
-            </array>
-            <key>RunAtLoad</key>
-            <true/>
-            <key>KeepAlive</key>
-            <true/>
-            <key>StandardErrorPath</key>
-            <string>\(xmlEscaped(stderrPath))</string>
-            <key>StandardOutPath</key>
-            <string>\(xmlEscaped(stdoutPath))</string>
-        </dict>
-        </plist>
-        """
-    }
-
-    @discardableResult
-    private func runLaunchctl(_ arguments: [String]) -> Bool {
-        let process = Process()
-        process.executableURL = URL(fileURLWithPath: "/bin/launchctl")
-        process.arguments = arguments
-        process.standardOutput = Pipe()
-        process.standardError = Pipe()
-
-        do {
-            try process.run()
-            process.waitUntilExit()
-            return process.terminationStatus == 0
-        } catch {
-            return false
-        }
-    }
-
-    private func ensureLaunchdDaemonInstalled() -> Bool {
-        let fileManager = FileManager.default
-        let plistURL = daemonPlistURL()
-        let plistContents = daemonPlistContents()
-        var shouldReload = false
-
-        do {
-            try fileManager.createDirectory(at: launchAgentsDirectory(), withIntermediateDirectories: true)
-
-            let currentContents = try? String(contentsOf: plistURL, encoding: .utf8)
-            if currentContents != plistContents {
-                try plistContents.write(to: plistURL, atomically: true, encoding: .utf8)
-                shouldReload = true
-            }
-        } catch {
-            print("Failed to write daemon plist: \(error)")
-            return false
-        }
-
-        if shouldReload {
-            _ = runLaunchctl(["unload", plistURL.path])
-        }
-
-        if isLaunchdDaemonLoaded() {
-            return true
-        }
-
-        guard runLaunchctl(["load", plistURL.path]) else {
-            return false
-        }
-
-        return isLaunchdDaemonLoaded()
-    }
-
-    private func isLaunchdDaemonLoaded() -> Bool {
-        let process = Process()
-        process.executableURL = URL(fileURLWithPath: "/bin/launchctl")
-        process.arguments = ["print", "gui/\(getuid())/\(daemonLabel)"]
-        process.standardOutput = Pipe()
-        process.standardError = Pipe()
-
-        do {
-            try process.run()
-            process.waitUntilExit()
-            return process.terminationStatus == 0
-        } catch {
-            return false
-        }
-    }
-    
-    func startDaemon() {
-        if daemonProcess != nil { return }
-        if ensureLaunchdDaemonInstalled() {
-            print("Using launchd-managed daemon.")
-            return
-        }
-
+    func syncSchedules() {
         let process = Process()
         process.executableURL = URL(fileURLWithPath: getPythonPath())
-        process.arguments = [getScriptPath("daemon.py")]
+        process.arguments = [getScriptPath("cli.py"), "sync-schedules"]
         do {
             try process.run()
-            self.daemonProcess = process
-            self.managesDaemonProcess = true
-            print("Daemon started as child process.")
+            process.waitUntilExit()
         } catch {
-            print("Failed to start daemon: \(error)")
+            print("Failed to sync schedules: \(error)")
         }
-    }
-    
-    func stopDaemon() {
-        guard managesDaemonProcess else { return }
-        daemonProcess?.terminate()
-        daemonProcess = nil
-        managesDaemonProcess = false
-        print("Daemon stopped.")
     }
     
     private func formatDisplayDate(_ isoString: String) -> String {
@@ -365,20 +231,12 @@ class DatabaseManager: ObservableObject {
     }
     
     func togglePause(task: Task) {
-        let updateQuery = "UPDATE tasks SET is_paused = ? WHERE id = ?;"
-        var stmt: OpaquePointer?
-        if sqlite3_prepare_v2(db, updateQuery, -1, &stmt, nil) == SQLITE_OK {
-            sqlite3_bind_int(stmt, 1, !task.isPaused ? 1 : 0)
-            task.id.withCString { cString in
-                sqlite3_bind_text(stmt, 2, cString, -1, nil)
-                if sqlite3_step(stmt) == SQLITE_DONE {
-                    DispatchQueue.main.async {
-                        self.fetchData()
-                    }
-                }
-            }
-        }
-        sqlite3_finalize(stmt)
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: getPythonPath())
+        process.arguments = [getScriptPath("cli.py"), task.isPaused ? "resume" : "pause", task.name]
+        try? process.run()
+        process.waitUntilExit()
+        DispatchQueue.main.async { self.fetchData() }
     }
     
     func addTaskViaCLI(name: String, schedule: String, command: String) throws {

@@ -28,6 +28,16 @@ def test_get_task_by_name(test_db):
     
     assert TaskManager.get_task_by_name("Not There") is None
 
+
+def test_get_task_by_id(test_db):
+    task_id = TaskManager.add_task("By Id", "0 11 * * *", "pwd")
+
+    task = TaskManager.get_task_by_id(task_id)
+
+    assert task is not None
+    assert task["id"] == task_id
+    assert task["name"] == "By Id"
+
 def test_set_pause_status(test_db):
     """Test pausing and resuming a task."""
     TaskManager.add_task("Pause Test", "* * * * *", "date")
@@ -96,3 +106,15 @@ def test_get_latest_run_started_at_returns_most_recent_start(test_db):
 
     assert latest_started_at == latest_run["started_at"]
     assert latest_run["id"] == latest_run_id
+
+
+def test_execute_task_skips_duplicate_running_task(test_db, monkeypatch):
+    task_id = TaskManager.add_task("No Duplicate", "0 11 * * *", "echo 'hello'")
+    TaskManager.log_run_start(task_id)
+
+    def fail_log_run_start(task_id):
+        raise AssertionError("should not start a duplicate run")
+
+    monkeypatch.setattr(TaskManager, "log_run_start", staticmethod(fail_log_run_start))
+
+    assert TaskManager.execute_task(task_id, "echo 'hello'") is False

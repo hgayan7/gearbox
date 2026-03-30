@@ -92,11 +92,18 @@ def _get_latest_scheduled_fire_time(trigger: CronTrigger, now: datetime.datetime
         cursor = next_fire_time
 
 
-def _parse_started_at(started_at: str, timezone):
-    if not started_at:
+def _parse_datetime(value, timezone):
+    if not value:
         return None
 
-    parsed = datetime.datetime.fromisoformat(started_at)
+    if isinstance(value, datetime.datetime):
+        parsed = value
+    else:
+        try:
+            parsed = datetime.datetime.fromisoformat(value)
+        except ValueError:
+            return None
+
     if parsed.tzinfo is None:
         parsed = parsed.replace(tzinfo=timezone)
     return parsed.astimezone(timezone)
@@ -122,7 +129,7 @@ def _recover_missed_run_if_needed(
     if latest_fire_time is None or latest_fire_time >= now:
         return
 
-    latest_run_started_at = _parse_started_at(last_started_at, scheduler.timezone)
+    latest_run_started_at = _parse_datetime(last_started_at, scheduler.timezone)
     if latest_run_started_at is not None and latest_run_started_at >= latest_fire_time:
         return
 
@@ -132,6 +139,67 @@ def _recover_missed_run_if_needed(
         latest_fire_time,
     )
     run_task(task["id"], task["command"])
+
+
+def _get_overdue_job_fire_time(job, scheduler: BackgroundScheduler):
+    next_run_time = _parse_datetime(getattr(job, "next_run_time", None), scheduler.timezone)
+    if next_run_time is None:
+        return None
+
+    now = _now_in_timezone(scheduler.timezone)
+    overdue_seconds = (now - next_run_time).total_seconds()
+    if overdue_seconds <= RECOVERY_WINDOW_THRESHOLD_SECONDS:
+        return None
+    if overdue_seconds > MISFIRE_GRACE_TIME_SECONDS:
+        return None
+
+    return next_run_time
+
+
+def _recover_overdue_job_if_needed(
+    task: dict,
+    cron_str: str,
+    job,
+    scheduler: BackgroundScheduler,
+):
+    overdue_fire_time = _get_overdue_job_fire_time(job, scheduler)
+    if overdue_fire_time is None:
+        return job
+
+    latest_runs = TaskManager.get_task_runs(task["id"], limit=1)
+    latest_run = latest_runs[0] if latest_runs else None
+    latest_run_started_at = _parse_datetime(latest_run["started_at"], scheduler.timezone) if latest_run else None
+    latest_run_status = latest_run["status"] if latest_run else None
+
+    if latest_run_status == "running" and latest_run_started_at is not None and latest_run_started_at >= overdue_fire_time:
+        return job
+
+    if latest_run_started_at is None or latest_run_started_at < overdue_fire_time:
+        logger.warning(
+            "Recovering overdue scheduled job for task '%s' originally due at %s",
+            task["name"],
+            overdue_fire_time,
+        )
+        run_task(task["id"], task["command"])
+
+    scheduler.remove_job(job.id)
+    replacement_job = scheduler.add_job(
+        run_task,
+        trigger=CronTrigger.from_crontab(cron_str, timezone=scheduler.timezone),
+        id=job.id,
+        args=[task["id"], task["command"]],
+        replace_existing=True,
+        misfire_grace_time=MISFIRE_GRACE_TIME_SECONDS,
+        coalesce=True,
+        max_instances=1,
+    )
+    logger.warning(
+        "Re-scheduled overdue job %s for task '%s'; next run at %s",
+        replacement_job.id,
+        task["name"],
+        replacement_job.next_run_time,
+    )
+    return replacement_job
 
 
 def sync_tasks_once(
@@ -191,6 +259,7 @@ def sync_tasks_once(
                         job.id,
                         job.next_run_time,
                     )
+                    active_jobs[job.id] = job
                 except ValueError as e:
                     logger.error("Error scheduling task '%s' with cron '%s': %s", task["name"], cron, e)
                     success = False
@@ -200,8 +269,13 @@ def sync_tasks_once(
 
             task_cron_map[task_id] = cron_str
 
-        if recovery_window_start is not None:
-            for cron in crons:
+        for i, cron in enumerate(crons):
+            job_id = f"{task_id}_{i}"
+            job = active_jobs.get(job_id)
+            if job is not None:
+                active_jobs[job_id] = _recover_overdue_job_if_needed(task, cron, job, scheduler)
+
+            if recovery_window_start is not None:
                 _recover_missed_run_if_needed(task, cron, scheduler, recovery_window_start)
 
     for job_id in list(active_jobs.keys()):

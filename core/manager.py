@@ -79,6 +79,17 @@ class TaskManager:
             conn.close()
 
     @staticmethod
+    def get_task_by_id(task_id: str) -> Optional[Dict[str, Any]]:
+        conn = get_connection()
+        cursor = conn.cursor()
+        try:
+            cursor.execute('SELECT * FROM tasks WHERE id = ?', (task_id,))
+            row = cursor.fetchone()
+            return dict(row) if row else None
+        finally:
+            conn.close()
+
+    @staticmethod
     def set_pause_status(name: str, is_paused: bool) -> bool:
         conn = get_connection()
         cursor = conn.cursor()
@@ -202,6 +213,16 @@ class TaskManager:
             conn.close()
 
     @staticmethod
+    def has_running_run(task_id: str) -> bool:
+        conn = get_connection()
+        cursor = conn.cursor()
+        try:
+            cursor.execute("SELECT 1 FROM runs WHERE task_id = ? AND status = 'running' LIMIT 1", (task_id,))
+            return cursor.fetchone() is not None
+        finally:
+            conn.close()
+
+    @staticmethod
     def reconcile_stale_runs() -> int:
         """Finalize runs that are still marked running but whose process has already exited."""
         conn = get_connection()
@@ -237,7 +258,10 @@ class TaskManager:
             conn.close()
 
     @staticmethod
-    def execute_task(task_id: str, command: str):
+    def execute_task(task_id: str, command: str) -> bool:
+        if TaskManager.has_running_run(task_id):
+            return False
+
         run_id = TaskManager.log_run_start(task_id)
         log_dir = os.path.expanduser("~/.gearbox/logs")
         os.makedirs(log_dir, exist_ok=True)
@@ -278,3 +302,4 @@ class TaskManager:
                 status="failed",
                 exit_code=-1
             )
+        return True

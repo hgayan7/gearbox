@@ -1,5 +1,8 @@
 import click
+import os
 import re
+import sys
+from core import launchd
 from core.manager import TaskManager
 from core.db import init_db
 
@@ -15,12 +18,8 @@ DAYS = {
 
 def parse_smart_schedule(s: str) -> str:
     s = s.lower().strip()
-    if s == "every minute": return "* * * * *"
     if s == "hourly" or s == "every hour": return "0 * * * *"
     if s == "daily" or s == "every day": return "0 0 * * *"
-    
-    m = re.match(r"every (\d+) minutes?", s)
-    if m: return f"*/{m.group(1)} * * * *"
     
     m2 = re.match(r"(?:every\s+)?([a-z]+)(?:\s+at)?\s+(\d{1,2}):(\d{2})", s)
     if m2:
@@ -38,6 +37,10 @@ def cli():
     init_db()
     TaskManager.reconcile_stale_runs()
 
+
+def _runner_context() -> tuple[str, str]:
+    return sys.executable, os.path.realpath(__file__)
+
 @cli.command()
 @click.argument('name')
 @click.argument('schedule')
@@ -45,17 +48,23 @@ def cli():
 def add(name, schedule, command):
     """Add a new task.
     Examples:
-      gearbox add my-task "*/5 * * * *" "echo hello"
-      gearbox add my-task "every 5 minutes" "echo hello"
       gearbox add my-task "daily | monday 10:00" "echo hello"
     """
     parts = [p.strip() for p in schedule.split("|") if p.strip()]
     cron_parts = [parse_smart_schedule(p) for p in parts]
     cron_schedule = " | ".join(cron_parts)
+    task_id = None
     try:
-        TaskManager.add_task(name, cron_schedule, command)
+        launchd.cron_schedule_to_calendar_entries(cron_schedule)
+        task_id = TaskManager.add_task(name, cron_schedule, command)
+        task = TaskManager.get_task_by_id(task_id)
+        python_executable, cli_script_path = _runner_context()
+        launchd.install_task(task, python_executable, cli_script_path)
         click.secho(f"Successfully added task '{name}' with schedule '{cron_schedule}'.", fg="green")
     except Exception as e:
+        if task_id is not None:
+            launchd.remove_task(task_id)
+            TaskManager.remove_task(name)
         if "UNIQUE constraint failed" in str(e):
             click.secho(f"Task '{name}' already exists. Use rm first, or change name.", fg="red")
         else:
@@ -65,6 +74,9 @@ def add(name, schedule, command):
 @click.argument('name')
 def rm(name):
     """Remove a task by name."""
+    task = TaskManager.get_task_by_name(name)
+    if task:
+        launchd.remove_task(task["id"])
     if TaskManager.remove_task(name):
         click.secho(f"Task '{name}' removed.", fg="green")
     else:
@@ -93,6 +105,9 @@ def ls():
 def pause(name):
     """Pause a task from running."""
     if TaskManager.set_pause_status(name, True):
+        task = TaskManager.get_task_by_name(name)
+        if task:
+            launchd.remove_task(task["id"])
         click.secho(f"Task '{name}' is now paused.", fg="yellow")
     else:
         click.secho(f"Task '{name}' not found.", fg="red")
@@ -102,6 +117,10 @@ def pause(name):
 def resume(name):
     """Resume a paused task."""
     if TaskManager.set_pause_status(name, False):
+        task = TaskManager.get_task_by_name(name)
+        if task:
+            python_executable, cli_script_path = _runner_context()
+            launchd.install_task(task, python_executable, cli_script_path)
         click.secho(f"Task '{name}' resumed.", fg="green")
     else:
         click.secho(f"Task '{name}' not found.", fg="red")
@@ -182,8 +201,34 @@ def run(name, bg):
             )
         return
 
+    if TaskManager.execute_task(task["id"], task["command"]):
+        click.secho(f"Task '{name}' ran successfully.", fg="green")
+    else:
+        click.secho(f"Task '{name}' is already running. Skipped duplicate launch.", fg="yellow")
+
+
+@cli.command("run-id", hidden=True)
+@click.argument("task_id")
+def run_id(task_id):
+    """Run a task by internal id."""
+    task = TaskManager.get_task_by_id(task_id)
+    if not task:
+        raise click.ClickException(f"Task id '{task_id}' not found.")
+
     TaskManager.execute_task(task["id"], task["command"])
-    click.secho(f"Task '{name}' ran successfully.", fg="green")
+
+
+@cli.command("sync-schedules", hidden=True)
+def sync_schedules():
+    """Rebuild launchd schedules for all tasks."""
+    python_executable, cli_script_path = _runner_context()
+    errors = launchd.sync_all_tasks(TaskManager.get_tasks(), python_executable, cli_script_path)
+    if errors:
+        click.secho("Schedules synced with warnings:", fg="yellow")
+        for error in errors:
+            click.secho(f"- {error}", fg="yellow")
+    else:
+        click.secho("Schedules synced.", fg="green")
 
 @cli.command()
 @click.argument('name')

@@ -3,11 +3,7 @@ import AppKit
 
 class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
-        DatabaseManager.shared.startDaemon()
-    }
-    
-    func applicationWillTerminate(_ notification: Notification) {
-        DatabaseManager.shared.stopDaemon()
+        DatabaseManager.shared.syncSchedules()
     }
 }
 

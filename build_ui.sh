@@ -1,7 +1,7 @@
 #!/bin/bash
 set -e
 
-VERSION="1.0.5"
+VERSION="1.0.6"
 
 echo "Building GearboxUI Swift App..."
 PROJECT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -64,33 +64,11 @@ codesign --force --deep -s - "build/GearboxUI.app"
 echo "Updating LaunchAgents for Gearbox..."
 DAEMON_PLIST="$HOME/Library/LaunchAgents/com.gearbox.daemon.plist"
 UI_PLIST="$HOME/Library/LaunchAgents/com.gearbox.ui.plist"
+LAUNCH_DOMAIN="gui/$(id -u)"
 
-launchctl unload "$DAEMON_PLIST" 2>/dev/null || true
-launchctl unload "$UI_PLIST" 2>/dev/null || true
-
-cat > "$DAEMON_PLIST" <<EOF
-<?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<plist version="1.0">
-<dict>
-    <key>Label</key>
-    <string>com.gearbox.daemon</string>
-    <key>ProgramArguments</key>
-    <array>
-        <string>$PROJECT_DIR/venv/bin/python</string>
-        <string>$PROJECT_DIR/daemon.py</string>
-    </array>
-    <key>RunAtLoad</key>
-    <true/>
-    <key>KeepAlive</key>
-    <true/>
-    <key>StandardErrorPath</key>
-    <string>$HOME/.gearbox/daemon-error.log</string>
-    <key>StandardOutPath</key>
-    <string>$HOME/.gearbox/daemon.log</string>
-</dict>
-</plist>
-EOF
+launchctl bootout "$LAUNCH_DOMAIN" "$DAEMON_PLIST" 2>/dev/null || true
+launchctl bootout "$LAUNCH_DOMAIN" "$UI_PLIST" 2>/dev/null || true
+rm -f "$DAEMON_PLIST"
 
 cat > "$UI_PLIST" <<EOF
 <?xml version="1.0" encoding="UTF-8"?>
@@ -115,6 +93,5 @@ cat > "$UI_PLIST" <<EOF
 </plist>
 EOF
 
-launchctl load "$DAEMON_PLIST"
-launchctl load "$UI_PLIST"
+launchctl bootstrap "$LAUNCH_DOMAIN" "$UI_PLIST"
 echo "Done! The Native macOS Menu Bar UI is now running!"

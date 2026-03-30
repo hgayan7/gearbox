@@ -1,6 +1,6 @@
 cask "gearbox" do
-  version "1.0.5"
-  sha256 "2d1d2c84526a330f2ae31eab17fad984e590513a0bfd233a17b31b9b0ed41539"
+  version "1.0.6"
+  sha256 "8ef22abdd0ce363e4b657e49bbfdda264a99c7e796649390fca2694fed928c33"
 
   url "https://github.com/hgayan7/gearbox/releases/download/v#{version}/gearbox-#{version}.zip"
   name "Gearbox"
@@ -17,5 +17,6 @@ cask "gearbox" do
     "~/Library/Preferences/com.gearbox.ui.plist",
     "~/Library/LaunchAgents/com.gearbox.ui.plist",
     "~/Library/LaunchAgents/com.gearbox.daemon.plist",
+    "~/Library/LaunchAgents/com.gearbox.task.*.plist",
   ]
 end

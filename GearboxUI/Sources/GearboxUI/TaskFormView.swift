@@ -22,7 +22,7 @@ struct TaskFormView: View {
     
     @State private var errorMessage: String?
     
-    let frequencies = ["Every Minute", "Hourly", "Daily", "Weekdays (Mon-Fri)", "Weekends", "Weekly"]
+    let frequencies = ["Hourly", "Daily", "Weekdays (Mon-Fri)", "Weekends", "Weekly"]
     let days = [
         ("Monday", 1), ("Tuesday", 2), ("Wednesday", 3),
         ("Thursday", 4), ("Friday", 5), ("Saturday", 6), ("Sunday", 0)
@@ -66,7 +66,7 @@ struct TaskFormView: View {
                                         set: { newValue in
                                             if let idx = schedules.firstIndex(where: { $0.id == schedule.id }) {
                                                 schedules[idx].frequency = newValue
-                                                if idx == 0 && (newValue == "Every Minute" || newValue == "Hourly") {
+                                                if idx == 0 && newValue == "Hourly" {
                                                     schedules = [schedules[0]]
                                                 }
                                             }
@@ -74,7 +74,7 @@ struct TaskFormView: View {
                                     )) {
                                         ForEach(frequencies.filter { freq in
                                             if let idx = schedules.firstIndex(where: { $0.id == schedule.id }), idx > 0 {
-                                                return freq != "Every Minute" && freq != "Hourly"
+                                                return freq != "Hourly"
                                             }
                                             return true
                                         }, id: \.self) { freq in
@@ -92,7 +92,7 @@ struct TaskFormView: View {
                                         .frame(width: 100)
                                     }
                                     
-                                    if schedule.frequency != "Every Minute" && schedule.frequency != "Hourly" {
+                                    if schedule.frequency != "Hourly" {
                                         DatePicker("", selection: $schedule.time, displayedComponents: .hourAndMinute)
                                             .datePickerStyle(.stepperField)
                                             .frame(width: 80)
@@ -110,7 +110,7 @@ struct TaskFormView: View {
                                 }
                             }
                             
-                            if let first = schedules.first, first.frequency != "Every Minute" && first.frequency != "Hourly" {
+                            if let first = schedules.first, first.frequency != "Hourly" {
                                 Button(action: {
                                     withAnimation { schedules.append(ScheduleItem()) }
                                 }) {
@@ -236,7 +236,6 @@ struct TaskFormView: View {
         let minute = calendar.component(.minute, from: item.time)
         
         switch item.frequency {
-        case "Every Minute": return "* * * * *"
         case "Hourly": return "0 * * * *"
         case "Daily": return "\(minute) \(hour) * * *"
         case "Weekdays (Mon-Fri)": return "\(minute) \(hour) * * 1-5"

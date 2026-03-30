@@ -5,9 +5,9 @@ from tzlocal import get_localzone
 
 
 class FakeJob:
-    def __init__(self, job_id: str):
+    def __init__(self, job_id: str, next_run_time=None):
         self.id = job_id
-        self.next_run_time = "next-run"
+        self.next_run_time = next_run_time
 
 
 class FakeScheduler:
@@ -267,6 +267,78 @@ def test_sync_tasks_once_recovers_after_sleep_gap_with_existing_job(monkeypatch)
     assert recovered_runs == [("task-1", "echo hi")]
     assert scheduler.added == []
     assert scheduler.removed == []
+
+
+def test_sync_tasks_once_recovers_overdue_existing_job_without_poll_gap(monkeypatch):
+    scheduler = FakeScheduler()
+    scheduler.jobs["task-1_0"] = FakeJob(
+        "task-1_0",
+        next_run_time=dt.datetime(2026, 3, 30, 10, 47, tzinfo=scheduler.timezone),
+    )
+    task = {
+        "id": "task-1",
+        "name": "Important Task",
+        "schedule": "47 10 * * *",
+        "command": "echo hi",
+        "is_paused": 0,
+    }
+    recovered_runs = []
+
+    monkeypatch.setattr(daemon.TaskManager, "get_tasks", lambda: [task])
+    monkeypatch.setattr(
+        daemon.TaskManager,
+        "get_task_runs",
+        lambda task_id, limit=1: [{"started_at": "2026-03-29T10:47:00", "status": "success"}],
+    )
+    monkeypatch.setattr(
+        daemon,
+        "_now_in_timezone",
+        lambda timezone: dt.datetime(2026, 3, 30, 11, 5, tzinfo=timezone),
+    )
+    monkeypatch.setattr(daemon, "run_task", lambda task_id, command: recovered_runs.append((task_id, command)))
+
+    cron_map = daemon.sync_tasks_once(scheduler, {"task-1": "47 10 * * *"})
+
+    assert cron_map == {"task-1": "47 10 * * *"}
+    assert recovered_runs == [("task-1", "echo hi")]
+    assert scheduler.removed == ["task-1_0"]
+    assert scheduler.added[0]["id"] == "task-1_0"
+
+
+def test_sync_tasks_once_reschedules_overdue_existing_job_after_manual_recovery(monkeypatch):
+    scheduler = FakeScheduler()
+    scheduler.jobs["task-1_0"] = FakeJob(
+        "task-1_0",
+        next_run_time=dt.datetime(2026, 3, 30, 11, 0, tzinfo=scheduler.timezone),
+    )
+    task = {
+        "id": "task-1",
+        "name": "Important Task",
+        "schedule": "0 11 * * *",
+        "command": "echo hi",
+        "is_paused": 0,
+    }
+    recovered_runs = []
+
+    monkeypatch.setattr(daemon.TaskManager, "get_tasks", lambda: [task])
+    monkeypatch.setattr(
+        daemon.TaskManager,
+        "get_task_runs",
+        lambda task_id, limit=1: [{"started_at": "2026-03-30T11:04:16", "status": "success"}],
+    )
+    monkeypatch.setattr(
+        daemon,
+        "_now_in_timezone",
+        lambda timezone: dt.datetime(2026, 3, 30, 11, 5, tzinfo=timezone),
+    )
+    monkeypatch.setattr(daemon, "run_task", lambda task_id, command: recovered_runs.append((task_id, command)))
+
+    cron_map = daemon.sync_tasks_once(scheduler, {"task-1": "0 11 * * *"})
+
+    assert cron_map == {"task-1": "0 11 * * *"}
+    assert recovered_runs == []
+    assert scheduler.removed == ["task-1_0"]
+    assert scheduler.added[0]["id"] == "task-1_0"
 
 
 def test_get_recovery_window_start_uses_startup_lookback():
