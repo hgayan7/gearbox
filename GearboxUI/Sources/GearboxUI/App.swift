@@ -4,6 +4,7 @@ import AppKit
 class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
         DatabaseManager.shared.syncSchedules()
+        DatabaseManager.shared.fetchData()
     }
 }
 
@@ -12,6 +13,7 @@ struct GearboxUIApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) var appDelegate
     @StateObject private var dbManager = DatabaseManager.shared
     @Environment(\.openWindow) var openWindow
+    @Environment(\.scenePhase) private var scenePhase
     
     var body: some Scene {
         WindowGroup(id: "dashboard") {
@@ -24,6 +26,11 @@ struct GearboxUIApp: App {
             Image(nsImage: MenuBarIcon.appIcon)
         }
         .menuBarExtraStyle(.window)
+        .onChange(of: scenePhase) { phase in
+            if phase == .active {
+                dbManager.fetchData()
+            }
+        }
     }
 }
 

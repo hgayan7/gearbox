@@ -65,6 +65,9 @@ echo "Updating LaunchAgents for Gearbox..."
 DAEMON_PLIST="$HOME/Library/LaunchAgents/com.gearbox.daemon.plist"
 UI_PLIST="$HOME/Library/LaunchAgents/com.gearbox.ui.plist"
 LAUNCH_DOMAIN="gui/$(id -u)"
+GEARBOX_HOME="$HOME/.gearbox"
+
+mkdir -p "$GEARBOX_HOME"
 
 launchctl bootout "$LAUNCH_DOMAIN" "$DAEMON_PLIST" 2>/dev/null || true
 launchctl bootout "$LAUNCH_DOMAIN" "$UI_PLIST" 2>/dev/null || true
@@ -86,9 +89,9 @@ cat > "$UI_PLIST" <<EOF
     <key>KeepAlive</key>
     <false/>
     <key>StandardErrorPath</key>
-    <string>$HOME/.gearbox/ui-error.log</string>
+    <string>$GEARBOX_HOME/ui-error.log</string>
     <key>StandardOutPath</key>
-    <string>$HOME/.gearbox/ui.log</string>
+    <string>$GEARBOX_HOME/ui.log</string>
 </dict>
 </plist>
 EOF

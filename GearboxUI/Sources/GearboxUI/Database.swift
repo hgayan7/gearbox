@@ -72,6 +72,8 @@ class DatabaseManager: ObservableObject {
     @Published var hasFailures: Bool = false
     
     private var db: OpaquePointer?
+    private let dbPath = NSString(string: "~/.gearbox/gearbox.db").expandingTildeInPath
+    private var openedDatabaseIdentifier: AnyHashable?
     
     private init() {
         openDB()
@@ -79,9 +81,52 @@ class DatabaseManager: ObservableObject {
     }
     
     func openDB() {
-        let expandPath = NSString(string: "~/.gearbox/gearbox.db").expandingTildeInPath
-        if sqlite3_open(expandPath, &db) != SQLITE_OK {
-            print("Error opening database")
+        closeDB()
+
+        guard FileManager.default.fileExists(atPath: dbPath) else {
+            db = nil
+            openedDatabaseIdentifier = nil
+            return
+        }
+
+        if sqlite3_open(dbPath, &db) != SQLITE_OK {
+            print("Error opening database at \(dbPath)")
+            closeDB()
+            return
+        }
+
+        openedDatabaseIdentifier = databaseIdentifier()
+    }
+
+    private func closeDB() {
+        if let db {
+            sqlite3_close(db)
+            self.db = nil
+        }
+    }
+
+    private func databaseIdentifier() -> AnyHashable? {
+        let url = URL(fileURLWithPath: dbPath)
+        guard let identifier = try? url.resourceValues(forKeys: [.fileResourceIdentifierKey]).fileResourceIdentifier else {
+            return nil
+        }
+        return identifier as? AnyHashable
+    }
+
+    private func ensureDBConnection() {
+        let fileExists = FileManager.default.fileExists(atPath: dbPath)
+        let currentIdentifier = fileExists ? databaseIdentifier() : nil
+
+        if !fileExists {
+            if db != nil || openedDatabaseIdentifier != nil {
+                closeDB()
+                openedDatabaseIdentifier = nil
+            }
+            return
+        }
+
+        if db == nil || currentIdentifier != openedDatabaseIdentifier {
+            openDB()
         }
     }
 
@@ -166,6 +211,18 @@ class DatabaseManager: ObservableObject {
     }
     
     func fetchData() {
+        ensureDBConnection()
+
+        guard db != nil else {
+            DispatchQueue.main.async {
+                self.tasks = []
+                self.recentRuns = []
+                self.activeTaskIds = []
+                self.hasFailures = false
+            }
+            return
+        }
+
         var newTasks: [Task] = []
         let taskQuery = "SELECT id, name, command, schedule, is_paused, schedule_desc FROM tasks ORDER BY name ASC;"
         var stmt: OpaquePointer?
@@ -288,6 +345,9 @@ class DatabaseManager: ObservableObject {
     }
 
     func fetchRuns(for taskId: String) -> [Run] {
+        ensureDBConnection()
+        guard db != nil else { return [] }
+
         var results: [Run] = []
         let runQuery = "SELECT id, task_id, status, started_at, ended_at, exit_code, stdout, stderr FROM runs WHERE task_id = ? ORDER BY started_at DESC LIMIT 50;"
         var stmt: OpaquePointer?
@@ -323,6 +383,6 @@ class DatabaseManager: ObservableObject {
     }
     
     deinit {
-        sqlite3_close(db)
+        closeDB()
     }
 }

@@ -21,8 +21,10 @@ echo "Installing dependencies..."
 
 LAUNCH_DIR="$HOME/Library/LaunchAgents"
 LAUNCH_DOMAIN="gui/$(id -u)"
+GEARBOX_HOME="$HOME/.gearbox"
 
 mkdir -p "$LAUNCH_DIR"
+mkdir -p "$GEARBOX_HOME"
 
 DAEMON_PLIST="$LAUNCH_DIR/com.gearbox.daemon.plist"
 UI_PLIST="$LAUNCH_DIR/com.gearbox.ui.plist"
@@ -95,9 +97,9 @@ cat > "$UI_PLIST" <<EOF
     <key>KeepAlive</key>
     <false/>
     <key>StandardErrorPath</key>
-    <string>$HOME/.gearbox/ui-error.log</string>
+    <string>$GEARBOX_HOME/ui-error.log</string>
     <key>StandardOutPath</key>
-    <string>$HOME/.gearbox/ui.log</string>
+    <string>$GEARBOX_HOME/ui.log</string>
 </dict>
 </plist>
 EOF
