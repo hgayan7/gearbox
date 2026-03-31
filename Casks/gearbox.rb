@@ -6,6 +6,7 @@ cask "gearbox" do
   name "Gearbox"
   desc "SwiftUI-based macOS menu bar task manager with Python backend"
   homepage "https://github.com/hgayan7/gearbox"
+  depends_on formula: "python@3.11"
 
   app "Gearbox.app"
   binary "Gearbox.app/Contents/MacOS/gearbox"
