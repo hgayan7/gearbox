@@ -51,16 +51,21 @@ https://github.com/user-attachments/assets/51500ad3-2145-4a78-9967-f05fe34f038b
 
 ### Homebrew (Recommended)
 
-Install Gearbox directly from the public cask in this repository. This uses Homebrew over public HTTPS and does not require GitHub credentials.
+Install Gearbox from the public Homebrew tap:
 
 ```bash
-# Install Gearbox from the cask definition in this repo
 brew install --cask hgayan7/gearbox/gearbox
+open -a Gearbox
 ```
 
 After installation, the Gearbox app will be in your `/Applications` folder, and the `gearbox` command will be available in your terminal.
 
-If a dedicated Homebrew tap is added later, it should live in a separate repository named `homebrew-gearbox`. The previous `brew tap hgayan7/gearbox` command is not valid for this repository layout.
+On first launch:
+
+- Homebrew installs the app, but does not automatically start the menu bar app.
+- Launch it once with `open -a Gearbox`.
+- macOS may block the first launch. If that happens, go to `System Settings > Privacy & Security` and click `Open Anyway`.
+- After the first successful launch, the Gearbox icon should appear in the menu bar.
 
 ## Usage
 
@@ -76,7 +81,7 @@ If a dedicated Homebrew tap is added later, it should live in a separate reposit
 
 ### UI
 
-The native macOS menu bar app starts automatically after installation. It provides a quick overview of active tasks and recent execution health.
+The native macOS menu bar app appears after you launch Gearbox once. It provides a quick overview of active tasks and recent execution health.
 
 ## Development
 
