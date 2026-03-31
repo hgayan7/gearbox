@@ -38,7 +38,7 @@ private enum MenuBarIcon {
     static let appIcon: NSImage = {
         let fallback = NSImage(systemSymbolName: "gearshape.fill", accessibilityDescription: "Gearbox") ?? NSImage()
         guard
-            let url = Bundle.module.url(forResource: "AppIcon", withExtension: "png"),
+            let url = Bundle.main.url(forResource: "AppIcon", withExtension: "icns"),
             let image = NSImage(contentsOf: url)
         else {
             return fallback

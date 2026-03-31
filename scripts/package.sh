@@ -10,7 +10,7 @@ set -e
 PROJECT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 BUILD_DIR="$PROJECT_DIR/dist"
 APP_NAME="Gearbox"
-VERSION="1.0.6"
+VERSION="1.0.7"
 APP_BUNDLE="$BUILD_DIR/$APP_NAME.app"
 CONTENTS="$APP_BUNDLE/Contents"
 RESOURCES="$CONTENTS/Resources"
@@ -88,7 +88,7 @@ cat > "$CONTENTS/Info.plist" <<EOF
     <key>CFBundleShortVersionString</key>
     <string>$VERSION</string>
     <key>CFBundleVersion</key>
-    <string>5</string>
+    <string>6</string>
     <key>LSUIElement</key>
     <true/>
 </dict>

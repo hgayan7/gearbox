@@ -11,7 +11,7 @@ let package = Package(
             name: "GearboxUI",
             dependencies: [],
             path: "Sources/GearboxUI",
-            resources: [.process("Resources")]
+            exclude: ["Resources"]
         ),
         .testTarget(
             name: "GearboxUITests",

@@ -43,3 +43,12 @@ def test_gearbox_shim_works_through_symlink(tmp_path):
     argv = args_file.read_text().splitlines()
     assert argv[0] == str(python_dir / "cli.py")
     assert argv[1] == "--help"
+
+
+def test_packaged_app_includes_swift_resource_bundle():
+    package_swift = (Path(__file__).resolve().parents[1] / "GearboxUI" / "Package.swift").read_text()
+    app_swift = (Path(__file__).resolve().parents[1] / "GearboxUI" / "Sources" / "GearboxUI" / "App.swift").read_text()
+
+    assert 'resources: [.process("Resources")]' not in package_swift
+    assert "Bundle.module" not in app_swift
+    assert 'Bundle.main.url(forResource: "AppIcon", withExtension: "icns")' in app_swift
