@@ -22,9 +22,12 @@ https://github.com/user-attachments/assets/51500ad3-2145-4a78-9967-f05fe34f038b
 ## Features
 
 - **Native macOS Menu Bar UI**: Monitor and control tasks directly from your menu bar with a polished Swift-based app.
+- **Shared Create/Edit Task Editor**: Create new automations and update existing ones from the same native editor.
+- **Advanced Execution Settings**: Configure raw commands, working directory, shell, and per-task environment variables.
 - **Live Log Streaming**: Watch your automations execute in real-time with built-in auto-scrolling. 📡
 - **Accurate Status Tracking**: Clear visual indicators for **Success**, **Failed**, **Running**, and **Cancelled** tasks.
-- **Smart Scheduling**: Flexible cron-based and natural language scheduling (e.g., "every 5 minutes", "mondays at 10:00").
+- **Flexible Scheduling**: Use preset schedules for common cases or switch to custom cron when you need exact control.
+- **Schedule Preview**: See the normalized schedule and the next upcoming run times before saving.
 - **Task Isolation**: Each task runs in its own process with full log capture.
 - **Background Daemon**: A lightweight Python daemon manages the execution queue.
 - **CLI Interface**: Powerful command-line tool for managing tasks.
@@ -72,16 +75,27 @@ On first launch:
 ### CLI
 
 - **Add a task**: `gearbox add my-task "*/5 * * * *" "echo hello"`
+- **Add a task with advanced settings**: `gearbox add sync-job "0 9 * * 1-5" "cd '/tmp/project' && ./run.sh" --raw-command "./run.sh" --working-directory "/tmp/project" --env-json '{"APP_ENV":"prod"}' --shell /bin/zsh`
+- **Update a task**: `gearbox update sync-job sync-job "0 10 * * 1-5" "cd '/tmp/project' && ./run.sh" --raw-command "./run.sh" --working-directory "/tmp/project"`
 - **List tasks**: `gearbox ls`
 - **View logs**: `gearbox logs my-task`
 - **View history**: `gearbox history my-task`
 - **Pause/Resume**: `gearbox pause my-task` / `gearbox resume my-task`
 - **Run now**: `gearbox run my-task`
 - **Stop task**: `gearbox stop my-task`
+- **Preview a schedule**: `gearbox preview-schedule "0 9 * * 1-5"`
 
 ### UI
 
 The native macOS menu bar app appears after you launch Gearbox once. It provides a quick overview of active tasks and recent execution health.
+
+From the desktop window you can:
+
+- Create or edit automations with the same form
+- Choose preset schedules or enter custom cron
+- Preview the next scheduled runs before saving
+- Switch between guided script selection and raw custom commands
+- Set per-task shell, working directory, and environment variables
 
 ## Development
 
