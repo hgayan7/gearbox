@@ -2,26 +2,49 @@ import Foundation
 import SQLite3
 import Darwin
 
-struct Task: Identifiable, Codable {
+struct Task: Identifiable, Decodable {
     let id: String
     let name: String
     let command: String
     let schedule: String
     let scheduleDesc: String
+    let rawCommand: String?
+    let workingDirectory: String?
+    let environment: [String: String]
+    let shell: String?
     var isPaused: Bool
     
     enum CodingKeys: String, CodingKey {
         case id, name, command, schedule
         case scheduleDesc = "schedule_desc"
+        case rawCommand = "raw_command"
+        case workingDirectory = "working_directory"
+        case environmentJSON = "environment_json"
+        case shell
         case isPaused = "is_paused"
     }
     
-    init(id: String, name: String, command: String, schedule: String, scheduleDesc: String, isPaused: Bool) {
+    init(
+        id: String,
+        name: String,
+        command: String,
+        schedule: String,
+        scheduleDesc: String,
+        rawCommand: String?,
+        workingDirectory: String?,
+        environment: [String: String],
+        shell: String?,
+        isPaused: Bool
+    ) {
         self.id = id
         self.name = name
         self.command = command
         self.schedule = schedule
         self.scheduleDesc = scheduleDesc
+        self.rawCommand = rawCommand
+        self.workingDirectory = workingDirectory
+        self.environment = environment
+        self.shell = shell
         self.isPaused = isPaused
     }
     
@@ -32,6 +55,19 @@ struct Task: Identifiable, Codable {
         command = try container.decode(String.self, forKey: .command)
         schedule = try container.decode(String.self, forKey: .schedule)
         scheduleDesc = try container.decode(String.self, forKey: .scheduleDesc)
+        rawCommand = try container.decodeIfPresent(String.self, forKey: .rawCommand)
+        workingDirectory = try container.decodeIfPresent(String.self, forKey: .workingDirectory)
+        shell = try container.decodeIfPresent(String.self, forKey: .shell)
+
+        if
+            let environmentJSONString = try container.decodeIfPresent(String.self, forKey: .environmentJSON),
+            let data = environmentJSONString.data(using: .utf8),
+            let decoded = try? JSONSerialization.jsonObject(with: data) as? [String: String]
+        {
+            environment = decoded
+        } else {
+            environment = [:]
+        }
         
         // Handle SQLite 0/1 as Bool
         if let boolVal = try? container.decode(Bool.self, forKey: .isPaused) {
@@ -209,6 +245,62 @@ class DatabaseManager: ObservableObject {
         
         return isoString
     }
+
+    private func stringValue(from statement: OpaquePointer?, index: Int32) -> String? {
+        guard let pointer = sqlite3_column_text(statement, index) else {
+            return nil
+        }
+        return String(cString: pointer)
+    }
+
+    private func environmentDictionary(from jsonString: String?) -> [String: String] {
+        guard let jsonString, let data = jsonString.data(using: .utf8) else {
+            return [:]
+        }
+
+        guard let decoded = try? JSONSerialization.jsonObject(with: data) as? [String: String] else {
+            return [:]
+        }
+        return decoded
+    }
+
+    private func environmentJSONString(from environment: [String: String]) throws -> String? {
+        let filtered = environment
+            .mapValues { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.key.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+
+        guard !filtered.isEmpty else { return nil }
+
+        let data = try JSONSerialization.data(withJSONObject: filtered, options: [.sortedKeys])
+        return String(data: data, encoding: .utf8)
+    }
+
+    @discardableResult
+    private func runCLI(arguments: [String]) throws -> String {
+        let process = Process()
+        let outputPipe = Pipe()
+        let errorPipe = Pipe()
+        process.executableURL = URL(fileURLWithPath: getPythonPath())
+        process.arguments = [getScriptPath("cli.py")] + arguments
+        process.standardOutput = outputPipe
+        process.standardError = errorPipe
+        try process.run()
+        process.waitUntilExit()
+
+        let outputData = outputPipe.fileHandleForReading.readDataToEndOfFile()
+        let errorData = errorPipe.fileHandleForReading.readDataToEndOfFile()
+        let output = String(data: outputData, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        let errorOutput = String(data: errorData, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+
+        guard process.terminationStatus == 0 else {
+            let message = errorOutput.isEmpty ? (output.isEmpty ? "Command failed." : output) : errorOutput
+            throw NSError(domain: "Gearbox", code: Int(process.terminationStatus), userInfo: [
+                NSLocalizedDescriptionKey: message
+            ])
+        }
+
+        return output
+    }
     
     func fetchData() {
         ensureDBConnection()
@@ -224,20 +316,38 @@ class DatabaseManager: ObservableObject {
         }
 
         var newTasks: [Task] = []
-        let taskQuery = "SELECT id, name, command, schedule, is_paused, schedule_desc FROM tasks ORDER BY name ASC;"
+        let taskQuery = """
+        SELECT id, name, command, schedule, is_paused, schedule_desc, raw_command, working_directory, environment_json, shell
+        FROM tasks
+        ORDER BY name ASC;
+        """
         var stmt: OpaquePointer?
         if sqlite3_prepare_v2(db, taskQuery, -1, &stmt, nil) == SQLITE_OK {
             while sqlite3_step(stmt) == SQLITE_ROW {
-                let id = String(cString: sqlite3_column_text(stmt, 0))
-                let name = String(cString: sqlite3_column_text(stmt, 1))
-                let cmd = String(cString: sqlite3_column_text(stmt, 2))
-                let sched = String(cString: sqlite3_column_text(stmt, 3))
+                let id = stringValue(from: stmt, index: 0) ?? ""
+                let name = stringValue(from: stmt, index: 1) ?? ""
+                let cmd = stringValue(from: stmt, index: 2) ?? ""
+                let sched = stringValue(from: stmt, index: 3) ?? ""
                 let isPaused = sqlite3_column_int(stmt, 4) != 0
-                
-                let descPtr = sqlite3_column_text(stmt, 5)
-                let desc = descPtr != nil ? String(cString: descPtr!) : sched
-                
-                newTasks.append(Task(id: id, name: name, command: cmd, schedule: sched, scheduleDesc: desc, isPaused: isPaused))
+
+                let desc = stringValue(from: stmt, index: 5) ?? sched
+                let rawCommand = stringValue(from: stmt, index: 6)
+                let workingDirectory = stringValue(from: stmt, index: 7)
+                let environmentJSON = stringValue(from: stmt, index: 8)
+                let shell = stringValue(from: stmt, index: 9)
+
+                newTasks.append(Task(
+                    id: id,
+                    name: name,
+                    command: cmd,
+                    schedule: sched,
+                    scheduleDesc: desc,
+                    rawCommand: rawCommand,
+                    workingDirectory: workingDirectory,
+                    environment: environmentDictionary(from: environmentJSON),
+                    shell: shell,
+                    isPaused: isPaused
+                ))
             }
         }
         sqlite3_finalize(stmt)
@@ -288,24 +398,69 @@ class DatabaseManager: ObservableObject {
     }
     
     func togglePause(task: Task) {
-        let process = Process()
-        process.executableURL = URL(fileURLWithPath: getPythonPath())
-        process.arguments = [getScriptPath("cli.py"), task.isPaused ? "resume" : "pause", task.name]
-        try? process.run()
-        process.waitUntilExit()
+        _ = try? runCLI(arguments: [task.isPaused ? "resume" : "pause", task.name])
         DispatchQueue.main.async { self.fetchData() }
     }
     
-    func addTaskViaCLI(name: String, schedule: String, command: String) throws {
-        let process = Process()
-        process.executableURL = URL(fileURLWithPath: getPythonPath())
-        process.arguments = [getScriptPath("cli.py"), "add", name, schedule, command]
-        try process.run()
-        process.waitUntilExit()
-        if process.terminationStatus != 0 {
-            throw NSError(domain: "Gearbox", code: 1, userInfo: [NSLocalizedDescriptionKey: "Failed to add task."])
+    func addTaskViaCLI(
+        name: String,
+        schedule: String,
+        command: String,
+        rawCommand: String?,
+        workingDirectory: String?,
+        environment: [String: String],
+        shell: String?
+    ) throws {
+        var arguments = ["add", name, schedule, command]
+        if let rawCommand = TaskEditorParser.normalizedText(rawCommand) {
+            arguments += ["--raw-command", rawCommand]
         }
+        if let workingDirectory = TaskEditorParser.normalizedText(workingDirectory) {
+            arguments += ["--working-directory", workingDirectory]
+        }
+        if let environmentJSON = try environmentJSONString(from: environment) {
+            arguments += ["--env-json", environmentJSON]
+        }
+        if let shell = TaskEditorParser.normalizedText(shell) {
+            arguments += ["--shell", shell]
+        }
+        try runCLI(arguments: arguments)
         DispatchQueue.main.async { self.fetchData() }
+    }
+
+    func updateTaskViaCLI(
+        existingName: String,
+        name: String,
+        schedule: String,
+        command: String,
+        rawCommand: String?,
+        workingDirectory: String?,
+        environment: [String: String],
+        shell: String?
+    ) throws {
+        var arguments = ["update", existingName, name, schedule, command]
+        if let rawCommand = TaskEditorParser.normalizedText(rawCommand) {
+            arguments += ["--raw-command", rawCommand]
+        }
+        if let workingDirectory = TaskEditorParser.normalizedText(workingDirectory) {
+            arguments += ["--working-directory", workingDirectory]
+        }
+        if let environmentJSON = try environmentJSONString(from: environment) {
+            arguments += ["--env-json", environmentJSON]
+        }
+        if let shell = TaskEditorParser.normalizedText(shell) {
+            arguments += ["--shell", shell]
+        }
+        try runCLI(arguments: arguments)
+        DispatchQueue.main.async { self.fetchData() }
+    }
+
+    func previewSchedule(_ scheduleInput: String) throws -> SchedulePreview {
+        let output = try runCLI(arguments: ["preview-schedule", scheduleInput])
+        guard let data = output.data(using: .utf8) else {
+            throw NSError(domain: "Gearbox", code: 1, userInfo: [NSLocalizedDescriptionKey: "Invalid schedule preview response."])
+        }
+        return try JSONDecoder().decode(SchedulePreview.self, from: data)
     }
     
     func fetchLiveLog(runId: String) -> String? {
@@ -319,20 +474,12 @@ class DatabaseManager: ObservableObject {
     }
 
     func removeTaskViaCLI(name: String) {
-        let process = Process()
-        process.executableURL = URL(fileURLWithPath: getPythonPath())
-        process.arguments = [getScriptPath("cli.py"), "rm", name]
-        try? process.run()
-        process.waitUntilExit()
+        _ = try? runCLI(arguments: ["rm", name])
         DispatchQueue.main.async { self.fetchData() }
     }
 
     func stopTaskViaCLI(name: String) {
-        let process = Process()
-        process.executableURL = URL(fileURLWithPath: getPythonPath())
-        process.arguments = [getScriptPath("cli.py"), "stop", name]
-        try? process.run()
-        process.waitUntilExit()
+        _ = try? runCLI(arguments: ["stop", name])
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { self.fetchData() }
     }
 

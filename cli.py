@@ -2,9 +2,12 @@ import click
 import os
 import re
 import sys
+import json
+import datetime
 from core import launchd
 from core.manager import TaskManager
 from core.db import init_db
+from apscheduler.triggers.cron import CronTrigger
 
 DAYS = {
     'sun': 0, 'sunday': 0,
@@ -14,12 +17,23 @@ DAYS = {
     'thu': 4, 'thursday': 4,
     'fri': 5, 'friday': 5,
     'sat': 6, 'saturday': 6,
+    'weekdays': '1-5',
+    'weekday': '1-5',
+    'weekends': '0,6',
+    'weekend': '0,6',
 }
 
 def parse_smart_schedule(s: str) -> str:
     s = s.lower().strip()
     if s == "hourly" or s == "every hour": return "0 * * * *"
     if s == "daily" or s == "every day": return "0 0 * * *"
+
+    every_minutes = re.match(r"every\s+(\d+)\s+minutes?$", s)
+    if every_minutes:
+        minutes = int(every_minutes.group(1))
+        if minutes <= 0 or 60 % minutes != 0:
+            raise ValueError("Minute intervals must divide evenly into one hour.")
+        return " | ".join(f"{minute} * * * *" for minute in range(0, 60, minutes))
     
     m2 = re.match(r"(?:every\s+)?([a-z]+)(?:\s+at)?\s+(\d{1,2}):(\d{2})", s)
     if m2:
@@ -27,9 +41,48 @@ def parse_smart_schedule(s: str) -> str:
         hour = int(m2.group(2))
         minute = int(m2.group(3))
         if day in DAYS:
-            return f"{minute} {hour} * * {DAYS[day]}"
+            day_value = DAYS[day]
+            return f"{minute} {hour} * * {day_value}"
             
     return s
+
+
+def normalize_schedule_input(schedule: str) -> str:
+    parts = [p.strip() for p in schedule.split("|") if p.strip()]
+    if not parts:
+        raise ValueError("Schedule is empty.")
+    return " | ".join(parse_smart_schedule(part) for part in parts)
+
+
+def schedule_preview_payload(schedule: str, limit: int = 3) -> dict:
+    normalized_schedule = normalize_schedule_input(schedule)
+    launchd.cron_schedule_to_calendar_entries(normalized_schedule)
+
+    timezone = datetime.datetime.now().astimezone().tzinfo
+    if timezone is None:
+        raise ValueError("Unable to determine local timezone.")
+
+    now = datetime.datetime.now(timezone)
+    upcoming: list[datetime.datetime] = []
+    for cron_expr in [part.strip() for part in normalized_schedule.split("|") if part.strip()]:
+        trigger = CronTrigger.from_crontab(cron_expr, timezone=timezone)
+        previous_fire_time = None
+        cursor = now
+        for _ in range(limit):
+            next_fire_time = trigger.get_next_fire_time(previous_fire_time, cursor)
+            if next_fire_time is None:
+                break
+            upcoming.append(next_fire_time)
+            previous_fire_time = next_fire_time
+            cursor = next_fire_time
+
+    deduped = sorted({fire_time.isoformat(): fire_time for fire_time in upcoming}.values())[:limit]
+    return {
+        "normalized_schedule": normalized_schedule,
+        "description": TaskManager._describe_schedule(normalized_schedule),
+        "timezone": str(timezone),
+        "next_runs": [fire_time.isoformat() for fire_time in deduped],
+    }
 
 @click.group()
 def cli():
@@ -45,18 +98,28 @@ def _runner_context() -> tuple[str, str]:
 @click.argument('name')
 @click.argument('schedule')
 @click.argument('command')
-def add(name, schedule, command):
+@click.option('--raw-command', default=None, help='Shell command to execute before any working-directory handling.')
+@click.option('--working-directory', default=None, help='Working directory for the task.')
+@click.option('--env-json', default=None, help='JSON object of environment variables for the task.')
+@click.option('--shell', default=None, help='Shell used to execute the task, e.g. /bin/zsh.')
+def add(name, schedule, command, raw_command, working_directory, env_json, shell):
     """Add a new task.
     Examples:
       gearbox add my-task "daily | monday 10:00" "echo hello"
     """
-    parts = [p.strip() for p in schedule.split("|") if p.strip()]
-    cron_parts = [parse_smart_schedule(p) for p in parts]
-    cron_schedule = " | ".join(cron_parts)
+    cron_schedule = normalize_schedule_input(schedule)
     task_id = None
     try:
         launchd.cron_schedule_to_calendar_entries(cron_schedule)
-        task_id = TaskManager.add_task(name, cron_schedule, command)
+        task_id = TaskManager.add_task(
+            name,
+            cron_schedule,
+            command,
+            raw_command=raw_command,
+            working_directory=working_directory,
+            environment_json=env_json,
+            shell=shell,
+        )
         task = TaskManager.get_task_by_id(task_id)
         python_executable, cli_script_path = _runner_context()
         launchd.install_task(task, python_executable, cli_script_path)
@@ -66,9 +129,53 @@ def add(name, schedule, command):
             launchd.remove_task(task_id)
             TaskManager.remove_task(name)
         if "UNIQUE constraint failed" in str(e):
-            click.secho(f"Task '{name}' already exists. Use rm first, or change name.", fg="red")
+            raise click.ClickException(f"Task '{name}' already exists. Use rm first, or change name.")
         else:
-            click.secho(f"Error adding task: {e}", fg="red")
+            raise click.ClickException(f"Error adding task: {e}")
+
+
+@cli.command()
+@click.argument('existing_name')
+@click.argument('name')
+@click.argument('schedule')
+@click.argument('command')
+@click.option('--raw-command', default=None, help='Shell command to execute before any working-directory handling.')
+@click.option('--working-directory', default=None, help='Working directory for the task.')
+@click.option('--env-json', default=None, help='JSON object of environment variables for the task.')
+@click.option('--shell', default=None, help='Shell used to execute the task, e.g. /bin/zsh.')
+def update(existing_name, name, schedule, command, raw_command, working_directory, env_json, shell):
+    """Update an existing task by name."""
+    existing_task = TaskManager.get_task_by_name(existing_name)
+    if not existing_task:
+        click.secho(f"Task '{existing_name}' not found.", fg="red")
+        return
+
+    cron_schedule = normalize_schedule_input(schedule)
+
+    try:
+        launchd.cron_schedule_to_calendar_entries(cron_schedule)
+        task_id = TaskManager.update_task(
+            existing_name,
+            name,
+            cron_schedule,
+            command,
+            raw_command=raw_command,
+            working_directory=working_directory,
+            environment_json=env_json,
+            shell=shell,
+        )
+        updated_task = TaskManager.get_task_by_id(task_id)
+        python_executable, cli_script_path = _runner_context()
+        if updated_task and not bool(updated_task["is_paused"]):
+            launchd.install_task(updated_task, python_executable, cli_script_path)
+        elif updated_task:
+            launchd.remove_task(updated_task["id"])
+        click.secho(f"Task '{existing_name}' updated.", fg="green")
+    except Exception as e:
+        if "UNIQUE constraint failed" in str(e):
+            raise click.ClickException(f"Task '{name}' already exists. Choose a different name.")
+        else:
+            raise click.ClickException(f"Error updating task: {e}")
 
 @cli.command()
 @click.argument('name')
@@ -201,7 +308,7 @@ def run(name, bg):
             )
         return
 
-    if TaskManager.execute_task(task["id"], task["command"]):
+    if TaskManager.execute_task(task["id"]):
         click.secho(f"Task '{name}' ran successfully.", fg="green")
     else:
         click.secho(f"Task '{name}' is already running. Skipped duplicate launch.", fg="yellow")
@@ -215,7 +322,7 @@ def run_id(task_id):
     if not task:
         raise click.ClickException(f"Task id '{task_id}' not found.")
 
-    TaskManager.execute_task(task["id"], task["command"])
+    TaskManager.execute_task(task["id"])
 
 
 @cli.command("sync-schedules", hidden=True)
@@ -241,6 +348,16 @@ def stop(name):
         
     TaskManager.stop_task(task["id"])
     click.secho(f"Sent stop signal to active runs for '{name}'.", fg="green")
+
+
+@cli.command("preview-schedule", hidden=True)
+@click.argument("schedule")
+def preview_schedule(schedule):
+    """Return normalized schedule information as JSON."""
+    try:
+        click.echo(json.dumps(schedule_preview_payload(schedule)))
+    except Exception as e:
+        raise click.ClickException(str(e))
 
 if __name__ == '__main__':
     cli()

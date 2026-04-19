@@ -1,6 +1,6 @@
 cask "gearbox" do
-  version "1.0.7"
-  sha256 "79191501e5ad5098fdd00b575e05f81201d154cf2db3590d7364c3c5bf3b863f"
+  version "1.0.8"
+  sha256 "9b87fda4646811fbc01f6fd79a073dad8ff7f1021454fecb0e2b9a626e2458a9"
 
   url "https://github.com/hgayan7/gearbox/releases/download/v#{version}/gearbox-#{version}.zip"
   name "Gearbox"

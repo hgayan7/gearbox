@@ -52,8 +52,7 @@ struct DesktopContentView: View {
             }
         }
         .sheet(isPresented: $showingAddTask) {
-            TaskFormView(dbManager: dbManager, isPresented: $showingAddTask)
-                .frame(width: 500)
+            TaskFormView(dbManager: dbManager, isPresented: $showingAddTask, mode: .create)
         }
         .onReceive(timer) { _ in
             dbManager.fetchData()
@@ -115,6 +114,7 @@ struct TaskDetailView: View {
     @ObservedObject var dbManager: DatabaseManager
     @State private var runs: [Run] = []
     @State private var selectedRunId: String?
+    @State private var showingEditTask = false
     
     var isCurrentlyRunning: Bool { dbManager.activeTaskIds.contains(task.id) }
     
@@ -147,6 +147,14 @@ struct TaskDetailView: View {
                 Spacer()
                 
                 HStack(spacing: 12) {
+                    Button(action: {
+                        showingEditTask = true
+                    }) {
+                        Label("Edit", systemImage: "slider.horizontal.3")
+                            .padding(.horizontal, 4)
+                    }
+                    .buttonStyle(.bordered)
+
                     Button(action: {
                         if isCurrentlyRunning {
                             dbManager.stopTaskViaCLI(name: task.name)
@@ -224,6 +232,9 @@ struct TaskDetailView: View {
         .onChange(of: task.id) { _ in refreshRuns() }
         .onChange(of: dbManager.activeTaskIds) { _ in refreshRuns() }
         .onReceive(Timer.publish(every: 2.5, on: .main, in: .common).autoconnect()) { _ in refreshRuns() }
+        .sheet(isPresented: $showingEditTask) {
+            TaskFormView(dbManager: dbManager, isPresented: $showingEditTask, mode: .edit(task))
+        }
     }
     
     private func refreshRuns() {

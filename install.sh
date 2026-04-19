@@ -1,7 +1,7 @@
 #!/bin/bash
 set -e
 
-VERSION="1.0.7"
+VERSION="1.0.8"
 
 echo "Setting up Gearbox..."
 
@@ -71,7 +71,7 @@ cat > "$PROJECT_DIR/GearboxUI/build/GearboxUI.app/Contents/Info.plist" <<EOF
     <key>CFBundleShortVersionString</key>
     <string>$VERSION</string>
     <key>CFBundleVersion</key>
-    <string>6</string>
+    <string>7</string>
     <key>LSUIElement</key>
     <true/>
 </dict>

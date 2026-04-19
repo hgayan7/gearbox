@@ -1,4 +1,5 @@
 from click.testing import CliRunner
+import json
 
 from cli import cli
 from core.manager import TaskManager
@@ -33,3 +34,14 @@ def test_run_bg_detaches_subprocess(monkeypatch):
     assert kwargs["stdin"] is not None
     assert kwargs["stdout"] is not None
     assert kwargs["stderr"] is not None
+
+
+def test_preview_schedule_returns_normalized_schedule():
+    result = CliRunner().invoke(cli, ["preview-schedule", "every 15 minutes"])
+
+    assert result.exit_code == 0
+
+    payload = json.loads(result.output)
+    assert payload["normalized_schedule"] == "0 * * * * | 15 * * * * | 30 * * * * | 45 * * * *"
+    assert payload["description"]
+    assert len(payload["next_runs"]) == 3

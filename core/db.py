@@ -32,6 +32,26 @@ def init_db():
         cursor.execute("ALTER TABLE tasks ADD COLUMN schedule_desc TEXT")
     except sqlite3.OperationalError:
         pass
+
+    try:
+        cursor.execute("ALTER TABLE tasks ADD COLUMN raw_command TEXT")
+    except sqlite3.OperationalError:
+        pass
+
+    try:
+        cursor.execute("ALTER TABLE tasks ADD COLUMN working_directory TEXT")
+    except sqlite3.OperationalError:
+        pass
+
+    try:
+        cursor.execute("ALTER TABLE tasks ADD COLUMN environment_json TEXT")
+    except sqlite3.OperationalError:
+        pass
+
+    try:
+        cursor.execute("ALTER TABLE tasks ADD COLUMN shell TEXT")
+    except sqlite3.OperationalError:
+        pass
     
     # Runs table
     cursor.execute('''

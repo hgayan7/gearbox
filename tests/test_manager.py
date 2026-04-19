@@ -1,4 +1,5 @@
 import pytest
+import json
 from core.manager import TaskManager
 from core.db import get_connection
 
@@ -37,6 +38,55 @@ def test_get_task_by_id(test_db):
     assert task is not None
     assert task["id"] == task_id
     assert task["name"] == "By Id"
+
+
+def test_add_task_stores_advanced_execution_settings(test_db):
+    task_id = TaskManager.add_task(
+        "Advanced Task",
+        "0 9 * * *",
+        "cd '/tmp/demo' && echo hello",
+        raw_command="echo hello",
+        working_directory="/tmp/demo",
+        environment_json='{"FOO":"bar"}',
+        shell="/bin/bash",
+    )
+
+    task = TaskManager.get_task_by_id(task_id)
+
+    assert task is not None
+    assert task["command"] == "cd '/tmp/demo' && echo hello"
+    assert task["raw_command"] == "echo hello"
+    assert task["working_directory"] == "/tmp/demo"
+    assert json.loads(task["environment_json"]) == {"FOO": "bar"}
+    assert task["shell"] == "/bin/bash"
+
+
+def test_update_task_rewrites_schedule_and_execution_settings(test_db):
+    task_id = TaskManager.add_task("Original Task", "0 9 * * *", "echo before")
+
+    updated_task_id = TaskManager.update_task(
+        "Original Task",
+        "Renamed Task",
+        "15 10 * * 1-5",
+        "cd '/tmp/demo' && python3 'job.py'",
+        raw_command="python3 'job.py'",
+        working_directory="/tmp/demo",
+        environment_json='{"MODE":"prod"}',
+        shell="/bin/zsh",
+    )
+
+    assert updated_task_id == task_id
+    assert TaskManager.get_task_by_name("Original Task") is None
+
+    task = TaskManager.get_task_by_name("Renamed Task")
+    assert task is not None
+    assert task["schedule"] == "15 10 * * 1-5"
+    assert task["command"] == "cd '/tmp/demo' && python3 'job.py'"
+    assert task["schedule_desc"]
+    assert task["raw_command"] == "python3 'job.py'"
+    assert task["working_directory"] == "/tmp/demo"
+    assert json.loads(task["environment_json"]) == {"MODE": "prod"}
+    assert task["shell"] == "/bin/zsh"
 
 def test_set_pause_status(test_db):
     """Test pausing and resuming a task."""
