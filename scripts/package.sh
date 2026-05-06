@@ -10,7 +10,7 @@ set -e
 PROJECT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 BUILD_DIR="$PROJECT_DIR/dist"
 APP_NAME="Gearbox"
-VERSION="1.0.8"
+VERSION="1.0.9"
 APP_BUNDLE="$BUILD_DIR/$APP_NAME.app"
 CONTENTS="$APP_BUNDLE/Contents"
 RESOURCES="$CONTENTS/Resources"
@@ -36,6 +36,7 @@ echo "🐍 Copying Python source files..."
 cp "$PROJECT_DIR/cli.py" "$RESOURCES/python/"
 cp "$PROJECT_DIR/daemon.py" "$RESOURCES/python/"
 cp -R "$PROJECT_DIR/core" "$RESOURCES/python/"
+find "$RESOURCES/python" -type d -name "__pycache__" -prune -exec rm -rf {} +
 
 echo "⚙️ Creating Embedded Python Virtualenv..."
 # Use python3.11 from the system/homebrew to create the initial venv

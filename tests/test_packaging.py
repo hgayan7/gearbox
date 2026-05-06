@@ -45,6 +45,43 @@ def test_gearbox_shim_works_through_symlink(tmp_path):
     assert argv[1] == "--help"
 
 
+def test_gearbox_shim_falls_back_when_bundled_python_is_missing(tmp_path):
+    app = tmp_path / "Gearbox.app" / "Contents"
+    macos = app / "MacOS"
+    resources = app / "Resources"
+    venv_lib = resources / "venv" / "lib" / "python3.11" / "site-packages"
+    python_dir = resources / "python"
+    fallback_bin = tmp_path / "fallback"
+
+    macos.mkdir(parents=True)
+    venv_lib.mkdir(parents=True)
+    python_dir.mkdir(parents=True)
+    fallback_bin.mkdir(parents=True)
+
+    shim_source = Path(__file__).resolve().parents[1] / "scripts" / "gearbox-shim.sh"
+    shim_target = macos / "gearbox"
+    shim_target.write_text(shim_source.read_text())
+    shim_target.chmod(shim_target.stat().st_mode | stat.S_IXUSR)
+
+    env_file = tmp_path / "env.txt"
+    fallback_python = fallback_bin / "python3.11"
+    write_executable(
+        fallback_python,
+        "#!/bin/bash\n"
+        f"printf '%s\\n' \"$1\" \"$PYTHONPATH\" > \"{env_file}\"\n",
+    )
+    (python_dir / "cli.py").write_text("print('ok')\n")
+
+    env = os.environ.copy()
+    env["GEARBOX_PYTHON"] = str(fallback_python)
+
+    subprocess.run([str(shim_target), "--help"], check=True, env=env)
+
+    argv = env_file.read_text().splitlines()
+    assert argv[0] == str(python_dir / "cli.py")
+    assert argv[1].split(os.pathsep)[0] == str(venv_lib)
+
+
 def test_packaged_app_includes_swift_resource_bundle():
     package_swift = (Path(__file__).resolve().parents[1] / "GearboxUI" / "Package.swift").read_text()
     app_swift = (Path(__file__).resolve().parents[1] / "GearboxUI" / "Sources" / "GearboxUI" / "App.swift").read_text()

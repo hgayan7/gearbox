@@ -174,28 +174,113 @@ class DatabaseManager: ObservableObject {
         let bundledPath = resourceURL.appendingPathComponent(relativePath).path
         return FileManager.default.fileExists(atPath: bundledPath) ? bundledPath : nil
     }
+
+    private func executablePath(_ path: String) -> String? {
+        FileManager.default.isExecutableFile(atPath: path) ? path : nil
+    }
+
+    private func commandPath(_ command: String) -> String? {
+        let process = Process()
+        let outputPipe = Pipe()
+        process.executableURL = URL(fileURLWithPath: "/usr/bin/env")
+        process.arguments = ["bash", "-lc", "command -v \(command)"]
+        process.standardOutput = outputPipe
+        process.standardError = Pipe()
+
+        do {
+            try process.run()
+            process.waitUntilExit()
+        } catch {
+            return nil
+        }
+
+        guard process.terminationStatus == 0 else {
+            return nil
+        }
+
+        let output = String(data: outputPipe.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8)?
+            .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        return output.isEmpty ? nil : output
+    }
     
     private func getPythonPath() -> String {
-        if let bundledPython = bundledResourcePath("venv/bin/python3") {
-            return bundledPython
+        if
+            let bundledPython = bundledResourcePath("venv/bin/python3"),
+            let executableBundledPython = executablePath(bundledPython)
+        {
+            return executableBundledPython
+        }
+
+        if
+            let overridePython = ProcessInfo.processInfo.environment["GEARBOX_PYTHON"],
+            let executableOverridePython = executablePath(overridePython)
+        {
+            return executableOverridePython
         }
 
         let homeDir = FileManager.default.homeDirectoryForCurrentUser
-        let defaultPath = homeDir.appendingPathComponent("Documents/Gearbox/venv/bin/python").path
-        if FileManager.default.fileExists(atPath: defaultPath) {
-            return defaultPath
+        let defaultVenvPaths = [
+            homeDir.appendingPathComponent("Documents/Gearbox/venv/bin/python3").path,
+            homeDir.appendingPathComponent("Documents/Gearbox/venv/bin/python").path
+        ]
+        for candidate in defaultVenvPaths {
+            if let executableCandidate = executablePath(candidate) {
+                return executableCandidate
+            }
         }
 
         let bundlePath = Bundle.main.bundleURL
         let projectRoot = bundlePath.deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
-        let localVenv = projectRoot.appendingPathComponent("venv/bin/python").path
-        if FileManager.default.fileExists(atPath: localVenv) {
-            return localVenv
+        let localVenvPaths = [
+            projectRoot.appendingPathComponent("venv/bin/python3").path,
+            projectRoot.appendingPathComponent("venv/bin/python").path
+        ]
+        for candidate in localVenvPaths {
+            if let executableCandidate = executablePath(candidate) {
+                return executableCandidate
+            }
+        }
+
+        for candidate in [
+            "/opt/homebrew/opt/python@3.11/bin/python3.11",
+            "/usr/local/opt/python@3.11/bin/python3.11",
+            "/opt/homebrew/bin/python3.11",
+            "/usr/local/bin/python3.11"
+        ] {
+            if let executableCandidate = executablePath(candidate) {
+                return executableCandidate
+            }
+        }
+
+        if let python311 = commandPath("python3.11") {
+            return python311
+        }
+
+        if let python3 = commandPath("python3") {
+            return python3
         }
 
         return "python3"
     }
-    
+
+    private func pythonEnvironment() -> [String: String] {
+        var environment = ProcessInfo.processInfo.environment
+        if let bundledSitePackages = bundledResourcePath("venv/lib/python3.11/site-packages") {
+            if let existingPythonPath = environment["PYTHONPATH"], !existingPythonPath.isEmpty {
+                environment["PYTHONPATH"] = "\(bundledSitePackages):\(existingPythonPath)"
+            } else {
+                environment["PYTHONPATH"] = bundledSitePackages
+            }
+        }
+        return environment
+    }
+
+    private func configurePythonProcess(_ process: Process, arguments: [String]) {
+        process.executableURL = URL(fileURLWithPath: getPythonPath())
+        process.arguments = [getScriptPath("cli.py")] + arguments
+        process.environment = pythonEnvironment()
+    }
+
     private func getScriptPath(_ name: String) -> String {
         if let bundledScript = bundledResourcePath("python/\(name)") {
             return bundledScript
@@ -214,8 +299,7 @@ class DatabaseManager: ObservableObject {
 
     func syncSchedules() {
         let process = Process()
-        process.executableURL = URL(fileURLWithPath: getPythonPath())
-        process.arguments = [getScriptPath("cli.py"), "sync-schedules"]
+        configurePythonProcess(process, arguments: ["sync-schedules"])
         do {
             try process.run()
             process.waitUntilExit()
@@ -223,7 +307,7 @@ class DatabaseManager: ObservableObject {
             print("Failed to sync schedules: \(error)")
         }
     }
-    
+
     private func formatDisplayDate(_ isoString: String) -> String {
         if isoString.isEmpty { return "" }
         let formatter = DateFormatter()
@@ -280,8 +364,7 @@ class DatabaseManager: ObservableObject {
         let process = Process()
         let outputPipe = Pipe()
         let errorPipe = Pipe()
-        process.executableURL = URL(fileURLWithPath: getPythonPath())
-        process.arguments = [getScriptPath("cli.py")] + arguments
+        configurePythonProcess(process, arguments: arguments)
         process.standardOutput = outputPipe
         process.standardError = errorPipe
         try process.run()
@@ -485,8 +568,7 @@ class DatabaseManager: ObservableObject {
 
     func runTaskManually(name: String) {
         let process = Process()
-        process.executableURL = URL(fileURLWithPath: getPythonPath())
-        process.arguments = [getScriptPath("cli.py"), "run", name, "--bg"]
+        configurePythonProcess(process, arguments: ["run", name, "--bg"])
         try? process.run()
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { self.fetchData() }
     }
