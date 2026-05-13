@@ -179,6 +179,27 @@ class DatabaseManager: ObservableObject {
         FileManager.default.isExecutableFile(atPath: path) ? path : nil
     }
 
+    private func usablePythonPath(_ path: String) -> String? {
+        guard let executablePath = executablePath(path) else {
+            return nil
+        }
+
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: executablePath)
+        process.arguments = ["-c", "import sys; raise SystemExit(sys.version_info[:2] != (3, 11))"]
+        process.standardOutput = Pipe()
+        process.standardError = Pipe()
+
+        do {
+            try process.run()
+            process.waitUntilExit()
+        } catch {
+            return nil
+        }
+
+        return process.terminationStatus == 0 ? executablePath : nil
+    }
+
     private func commandPath(_ command: String) -> String? {
         let process = Process()
         let outputPipe = Pipe()
@@ -205,17 +226,17 @@ class DatabaseManager: ObservableObject {
     
     private func getPythonPath() -> String {
         if
-            let bundledPython = bundledResourcePath("venv/bin/python3"),
-            let executableBundledPython = executablePath(bundledPython)
+            let overridePython = ProcessInfo.processInfo.environment["GEARBOX_PYTHON"],
+            let usableOverridePython = usablePythonPath(overridePython)
         {
-            return executableBundledPython
+            return usableOverridePython
         }
 
         if
-            let overridePython = ProcessInfo.processInfo.environment["GEARBOX_PYTHON"],
-            let executableOverridePython = executablePath(overridePython)
+            let bundledPython = bundledResourcePath("venv/bin/python3"),
+            let usableBundledPython = usablePythonPath(bundledPython)
         {
-            return executableOverridePython
+            return usableBundledPython
         }
 
         let homeDir = FileManager.default.homeDirectoryForCurrentUser
@@ -224,8 +245,8 @@ class DatabaseManager: ObservableObject {
             homeDir.appendingPathComponent("Documents/Gearbox/venv/bin/python").path
         ]
         for candidate in defaultVenvPaths {
-            if let executableCandidate = executablePath(candidate) {
-                return executableCandidate
+            if let usableCandidate = usablePythonPath(candidate) {
+                return usableCandidate
             }
         }
 
@@ -236,8 +257,8 @@ class DatabaseManager: ObservableObject {
             projectRoot.appendingPathComponent("venv/bin/python").path
         ]
         for candidate in localVenvPaths {
-            if let executableCandidate = executablePath(candidate) {
-                return executableCandidate
+            if let usableCandidate = usablePythonPath(candidate) {
+                return usableCandidate
             }
         }
 
@@ -247,17 +268,17 @@ class DatabaseManager: ObservableObject {
             "/opt/homebrew/bin/python3.11",
             "/usr/local/bin/python3.11"
         ] {
-            if let executableCandidate = executablePath(candidate) {
-                return executableCandidate
+            if let usableCandidate = usablePythonPath(candidate) {
+                return usableCandidate
             }
         }
 
-        if let python311 = commandPath("python3.11") {
-            return python311
+        if let python311 = commandPath("python3.11"), let usablePython311 = usablePythonPath(python311) {
+            return usablePython311
         }
 
-        if let python3 = commandPath("python3") {
-            return python3
+        if let python3 = commandPath("python3"), let usablePython3 = usablePythonPath(python3) {
+            return usablePython3
         }
 
         return "python3"
