@@ -16,7 +16,7 @@ struct GearboxUIApp: App {
     @Environment(\.scenePhase) private var scenePhase
     
     var body: some Scene {
-        WindowGroup(id: "dashboard") {
+        Window("Gearbox", id: "dashboard") {
             DesktopContentView(dbManager: dbManager)
         }
         
