@@ -23,24 +23,29 @@ if [ -d "$BUNDLED_SITE_PACKAGES" ]; then
 fi
 
 python_candidates=(
-    "$BUNDLED_PYTHON"
     "${GEARBOX_PYTHON:-}"
+    "$BUNDLED_PYTHON"
+    "python3.11"
+    "python3"
     "/opt/homebrew/opt/python@3.11/bin/python3.11"
     "/usr/local/opt/python@3.11/bin/python3.11"
     "/opt/homebrew/bin/python3.11"
     "/usr/local/bin/python3.11"
-    "python3.11"
-    "python3"
 )
 
 for python in "${python_candidates[@]}"; do
     [ -n "$python" ] || continue
 
+    resolved_python=""
     if [[ "$python" == */* ]]; then
         [ -x "$python" ] || continue
-        exec "$python" "$APP_CONTENTS/Resources/python/cli.py" "$@"
+        resolved_python="$python"
     elif command -v "$python" >/dev/null 2>&1; then
-        exec "$python" "$APP_CONTENTS/Resources/python/cli.py" "$@"
+        resolved_python="$(command -v "$python")"
+    fi
+
+    if [ -n "$resolved_python" ] && "$resolved_python" -c 'import sys; raise SystemExit(sys.version_info[:2] != (3, 11))' >/dev/null 2>&1; then
+        exec "$resolved_python" "$APP_CONTENTS/Resources/python/cli.py" "$@"
     fi
 done
 
