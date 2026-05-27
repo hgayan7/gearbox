@@ -77,40 +77,84 @@ def _parse_weekdays(field: str) -> list[int] | None:
     return unique
 
 
+def _parse_numeric_field(field: str, min_val: int, max_val: int, field_name: str) -> list[int] | None:
+    """Parse a cron numeric field into a sorted list of unique integer values.
+
+    Supports:
+      - ``*``        → None (wildcard, meaning all values)
+      - ``5``        → [5]
+      - ``1,3,5``    → [1, 3, 5]
+      - ``1-5``      → [1, 2, 3, 4, 5]
+      - ``*/2``      → [0, 2, 4, …] (step over full range)
+      - ``1-5/2``    → [1, 3, 5]    (step over sub-range)
+    """
+    if field == "*":
+        return None
+
+    values: list[int] = []
+    for part in field.split(","):
+        token = part.strip()
+        if not token:
+            continue
+
+        if "/" in token:
+            range_part, step_str = token.split("/", 1)
+            if not step_str.isdigit() or int(step_str) == 0:
+                raise ValueError(f"Unsupported {field_name} field: {field}")
+            step = int(step_str)
+            if range_part == "*":
+                start, end = min_val, max_val
+            elif "-" in range_part:
+                start_str, end_str = range_part.split("-", 1)
+                start, end = int(start_str), int(end_str)
+            else:
+                start = int(range_part)
+                end = max_val
+            values.extend(range(start, end + 1, step))
+        elif "-" in token:
+            start_str, end_str = token.split("-", 1)
+            start, end = int(start_str), int(end_str)
+            values.extend(range(start, end + 1))
+        else:
+            if not token.isdigit():
+                raise ValueError(f"Unsupported {field_name} field: {field}")
+            values.append(int(token))
+
+    unique = sorted(set(values))
+    if not unique:
+        raise ValueError(f"Unsupported {field_name} field: {field}")
+    if any(v < min_val or v > max_val for v in unique):
+        raise ValueError(f"Unsupported {field_name} field: {field}")
+    return unique
+
+
 def _calendar_entries_for_cron(cron_expr: str) -> list[dict[str, int]]:
     parts = cron_expr.split()
     if len(parts) != 5:
         raise ValueError(f"Unsupported schedule format: {cron_expr}")
 
-    minute, hour, day_of_month, month, day_of_week = parts
+    minute_str, hour_str, day_of_month, month, day_of_week = parts
     if day_of_month != "*" or month != "*":
         raise ValueError(f"Unsupported schedule format: {cron_expr}")
-    if minute == "*":
+    if minute_str == "*":
         raise ValueError("Per-minute schedules are no longer supported")
-    if not minute.isdigit():
-        raise ValueError(f"Unsupported minute field: {minute}")
 
-    minute_value = int(minute)
-    if minute_value < 0 or minute_value > 59:
-        raise ValueError(f"Unsupported minute field: {minute}")
+    minutes = _parse_numeric_field(minute_str, 0, 59, "minute")
+    if minutes is None:
+        raise ValueError("Per-minute schedules are no longer supported")
 
-    if hour == "*":
+    hours = _parse_numeric_field(hour_str, 0, 23, "hour")
+
+    if hours is None:
         if day_of_week != "*":
             raise ValueError(f"Unsupported schedule format: {cron_expr}")
-        return [{"Minute": minute_value}]
-
-    if not hour.isdigit():
-        raise ValueError(f"Unsupported hour field: {hour}")
-
-    hour_value = int(hour)
-    if hour_value < 0 or hour_value > 23:
-        raise ValueError(f"Unsupported hour field: {hour}")
+        return [{"Minute": m} for m in minutes]
 
     weekdays = _parse_weekdays(day_of_week)
     if weekdays is None:
-        return [{"Hour": hour_value, "Minute": minute_value}]
+        return [{"Hour": h, "Minute": m} for h in hours for m in minutes]
 
-    return [{"Weekday": weekday, "Hour": hour_value, "Minute": minute_value} for weekday in weekdays]
+    return [{"Weekday": wd, "Hour": h, "Minute": m} for wd in weekdays for h in hours for m in minutes]
 
 
 def cron_schedule_to_calendar_entries(schedule: str) -> list[dict[str, int]]:

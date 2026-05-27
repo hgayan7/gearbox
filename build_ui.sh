@@ -1,7 +1,7 @@
 #!/bin/bash
 set -e
 
-VERSION="1.0.8"
+VERSION="1.1.1"
 
 echo "Building GearboxUI Swift App..."
 PROJECT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"

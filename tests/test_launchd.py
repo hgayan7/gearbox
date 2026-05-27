@@ -33,8 +33,82 @@ def test_cron_schedule_to_calendar_entries_rejects_per_minute_schedules():
     with pytest.raises(ValueError):
         launchd.cron_schedule_to_calendar_entries("* * * * *")
 
-    with pytest.raises(ValueError):
-        launchd.cron_schedule_to_calendar_entries("*/5 * * * *")
+
+def test_cron_hour_step():
+    """Issue #8: ``0 */2 * * *`` should generate entries for every 2 hours."""
+    result = launchd.cron_schedule_to_calendar_entries("0 */2 * * *")
+    expected_hours = list(range(0, 24, 2))
+    assert result == [{"Hour": h, "Minute": 0} for h in expected_hours]
+
+
+def test_cron_hour_range():
+    """Issue #8: ``0 2-5 * * *`` should generate entries for hours 2 through 5."""
+    result = launchd.cron_schedule_to_calendar_entries("0 2-5 * * *")
+    assert result == [
+        {"Hour": 2, "Minute": 0},
+        {"Hour": 3, "Minute": 0},
+        {"Hour": 4, "Minute": 0},
+        {"Hour": 5, "Minute": 0},
+    ]
+
+
+def test_cron_hour_comma():
+    result = launchd.cron_schedule_to_calendar_entries("30 8,12,18 * * *")
+    assert result == [
+        {"Hour": 8, "Minute": 30},
+        {"Hour": 12, "Minute": 30},
+        {"Hour": 18, "Minute": 30},
+    ]
+
+
+def test_cron_hour_range_with_step():
+    result = launchd.cron_schedule_to_calendar_entries("0 1-10/3 * * *")
+    assert result == [
+        {"Hour": 1, "Minute": 0},
+        {"Hour": 4, "Minute": 0},
+        {"Hour": 7, "Minute": 0},
+        {"Hour": 10, "Minute": 0},
+    ]
+
+
+def test_cron_minute_step():
+    result = launchd.cron_schedule_to_calendar_entries("*/15 * * * *")
+    assert result == [
+        {"Minute": 0},
+        {"Minute": 15},
+        {"Minute": 30},
+        {"Minute": 45},
+    ]
+
+
+def test_cron_minute_comma():
+    result = launchd.cron_schedule_to_calendar_entries("0,30 10 * * *")
+    assert result == [
+        {"Hour": 10, "Minute": 0},
+        {"Hour": 10, "Minute": 30},
+    ]
+
+
+def test_cron_minute_range():
+    result = launchd.cron_schedule_to_calendar_entries("0-3 10 * * *")
+    assert result == [
+        {"Hour": 10, "Minute": 0},
+        {"Hour": 10, "Minute": 1},
+        {"Hour": 10, "Minute": 2},
+        {"Hour": 10, "Minute": 3},
+    ]
+
+
+def test_cron_combined_hour_step_with_weekdays():
+    result = launchd.cron_schedule_to_calendar_entries("0 */8 * * 1,5")
+    assert result == [
+        {"Weekday": 1, "Hour": 0, "Minute": 0},
+        {"Weekday": 1, "Hour": 8, "Minute": 0},
+        {"Weekday": 1, "Hour": 16, "Minute": 0},
+        {"Weekday": 5, "Hour": 0, "Minute": 0},
+        {"Weekday": 5, "Hour": 8, "Minute": 0},
+        {"Weekday": 5, "Hour": 16, "Minute": 0},
+    ]
 
 
 def test_sync_all_tasks_writes_active_plists_and_removes_inactive(monkeypatch, tmp_path):
