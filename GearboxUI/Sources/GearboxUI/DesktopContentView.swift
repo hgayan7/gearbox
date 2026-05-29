@@ -136,6 +136,8 @@ struct TaskDetailView: View {
                         Text(task.command)
                             .font(.system(size: 10, design: .monospaced))
                             .foregroundColor(.secondary.opacity(0.8))
+                            .lineLimit(1)
+                            .truncationMode(.middle)
                             .padding(.horizontal, 4)
                             .padding(.vertical, 2)
                             .background(Color.primary.opacity(0.05))
