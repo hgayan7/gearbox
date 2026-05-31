@@ -1,10 +1,43 @@
 import SwiftUI
 import AppKit
+import UserNotifications
 
-class AppDelegate: NSObject, NSApplicationDelegate {
+class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDelegate {
+    func applicationWillFinishLaunching(_ notification: Notification) {
+        let runningApps = NSRunningApplication.runningApplications(withBundleIdentifier: Bundle.main.bundleIdentifier ?? "")
+        if runningApps.count > 1 {
+            NSApp.terminate(nil)
+        }
+    }
+
     func applicationDidFinishLaunching(_ notification: Notification) {
+        let center = UNUserNotificationCenter.current()
+        center.delegate = self
+        center.requestAuthorization(options: [.alert, .sound]) { _, _ in }
+
         DatabaseManager.shared.syncSchedules()
         DatabaseManager.shared.fetchData()
+    }
+
+    // Show notifications even when the app is in the foreground (menu bar open)
+    func userNotificationCenter(
+        _ center: UNUserNotificationCenter,
+        willPresent notification: UNNotification,
+        withCompletionHandler completionHandler: @escaping (UNNotificationPresentationOptions) -> Void
+    ) {
+        completionHandler([.banner, .sound])
+    }
+
+    // Handle notification click: bring the running application to the front
+    func userNotificationCenter(
+        _ center: UNUserNotificationCenter,
+        didReceive response: UNNotificationResponse,
+        withCompletionHandler completionHandler: @escaping () -> Void
+    ) {
+        DispatchQueue.main.async {
+            NSApp.activate(ignoringOtherApps: true)
+        }
+        completionHandler()
     }
 }
 
@@ -31,6 +64,11 @@ struct GearboxUIApp: App {
                 dbManager.fetchData()
             }
         }
+
+        Window("Notification Settings", id: "notification-settings") {
+            NotificationSettingsView()
+        }
+        .windowResizability(.contentSize)
     }
 }
 

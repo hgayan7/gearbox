@@ -10,7 +10,7 @@ set -e
 PROJECT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 BUILD_DIR="$PROJECT_DIR/dist"
 APP_NAME="Gearbox"
-VERSION="1.1.1"
+VERSION="1.2.0"
 APP_BUNDLE="$BUILD_DIR/$APP_NAME.app"
 CONTENTS="$APP_BUNDLE/Contents"
 RESOURCES="$CONTENTS/Resources"
@@ -92,6 +92,8 @@ cat > "$CONTENTS/Info.plist" <<EOF
     <string>7</string>
     <key>LSUIElement</key>
     <true/>
+    <key>NSUserNotificationUsageDescription</key>
+    <string>Gearbox uses notifications to alert you when scheduled tasks complete or fail.</string>
 </dict>
 </plist>
 EOF

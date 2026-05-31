@@ -1,6 +1,7 @@
 import Foundation
 import SQLite3
 import Darwin
+import UserNotifications
 
 struct Task: Identifiable, Decodable {
     let id: String
@@ -110,10 +111,35 @@ class DatabaseManager: ObservableObject {
     private var db: OpaquePointer?
     private let dbPath = NSString(string: "~/.gearbox/gearbox.db").expandingTildeInPath
     private var openedDatabaseIdentifier: AnyHashable?
-    
+
+    // MARK: - Notification tracking
+    private var notifiedRunIds: Set<String> = []
+    private let notifiedRunIdsKey = "gearbox.notifiedRunIds"
+    /// True only for the very first fetchData() call after launch.
+    /// On first fetch we seed notifiedRunIds with all existing completed runs
+    /// so we never re-fire notifications for historical data.
+    private var isFirstFetch = true
+    private var backgroundTimer: Timer?
+
     private init() {
+        // Register default notification preferences (failure notifications enabled by default)
+        UserDefaults.standard.register(defaults: [
+            "gearbox.notify.success": false,
+            "gearbox.notify.failure": true
+        ])
+
+        if let stored = UserDefaults.standard.array(forKey: notifiedRunIdsKey) as? [String] {
+            notifiedRunIds = Set(stored)
+        }
         openDB()
         fetchData()
+
+        // Start background polling every 5 seconds to process runs and send notifications
+        DispatchQueue.main.async {
+            self.backgroundTimer = Timer.scheduledTimer(withTimeInterval: 5.0, repeats: true) { [weak self] _ in
+                self?.fetchData()
+            }
+        }
     }
     
     func openDB() {
@@ -498,9 +524,67 @@ class DatabaseManager: ObservableObject {
             self.recentRuns = newRuns
             self.activeTaskIds = activeIds
             self.hasFailures = newRuns.prefix(3).contains { $0.status == "failed" }
+            self.checkAndSendNotifications(runs: newRuns, tasks: newTasks)
         }
     }
     
+    // MARK: - Notifications
+
+    /// On the very first fetch after launch, seed notifiedRunIds with all currently
+    /// completed runs so we don't re-fire notifications for historical data.
+    /// On every subsequent fetch, fire notifications for newly completed runs.
+    private func checkAndSendNotifications(runs: [Run], tasks: [Task]) {
+        let completedRuns = runs.filter { $0.status == "success" || $0.status == "failed" }
+
+        if isFirstFetch {
+            isFirstFetch = false
+            for run in completedRuns {
+                notifiedRunIds.insert(run.id)
+            }
+            persistNotifiedRunIds()
+            return
+        }
+
+        let notifyOnSuccess = UserDefaults.standard.bool(forKey: "gearbox.notify.success")
+        let notifyOnFailure = UserDefaults.standard.bool(forKey: "gearbox.notify.failure")
+
+        var changed = false
+        for run in completedRuns {
+            guard !notifiedRunIds.contains(run.id) else { continue }
+            notifiedRunIds.insert(run.id)
+            changed = true
+
+            let shouldNotify: Bool
+            switch run.status {
+            case "success": shouldNotify = notifyOnSuccess
+            case "failed":  shouldNotify = notifyOnFailure
+            default:        shouldNotify = false
+            }
+
+            guard shouldNotify else { continue }
+
+            let taskName = tasks.first(where: { $0.id == run.taskId })?.name ?? "Task"
+            postNotification(for: run, taskName: taskName)
+        }
+
+        if changed { persistNotifiedRunIds() }
+    }
+
+    private func postNotification(for run: Run, taskName: String) {
+        postRunNotification(
+            runId: run.id,
+            taskName: taskName,
+            status: run.status,
+            exitCode: run.exitCode
+        )
+    }
+
+    private func persistNotifiedRunIds() {
+        UserDefaults.standard.set(Array(notifiedRunIds), forKey: notifiedRunIdsKey)
+    }
+
+    // MARK: - Task actions
+
     func togglePause(task: Task) {
         _ = try? runCLI(arguments: [task.isPaused ? "resume" : "pause", task.name])
         DispatchQueue.main.async { self.fetchData() }

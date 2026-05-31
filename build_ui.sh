@@ -1,10 +1,25 @@
 #!/bin/bash
 set -e
 
-VERSION="1.1.1"
+VERSION="1.2.0"
 
 echo "Building GearboxUI Swift App..."
 PROJECT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+# --- Ensure Python venv is healthy ---
+VENV_DIR="$PROJECT_DIR/venv"
+VENV_BIN="$VENV_DIR/bin/python3"
+
+if [ ! -f "$VENV_BIN" ] || ! "$VENV_BIN" -c "import click, apscheduler, cron_descriptor" 2>/dev/null; then
+    echo "Python environment missing or stale — rebuilding..."
+    rm -rf "$VENV_DIR"
+    python3.11 -m venv "$VENV_DIR"
+    "$VENV_BIN" -m pip install -q --upgrade pip
+    "$VENV_BIN" -m pip install -q -r "$PROJECT_DIR/requirements.txt"
+    echo "Python environment ready."
+fi
+# -------------------------------------
+
 cd "$PROJECT_DIR/GearboxUI"
 
 swift build -c release
@@ -54,6 +69,8 @@ cat > build/GearboxUI.app/Contents/Info.plist <<EOF
     <string>7</string>
     <key>LSUIElement</key>
     <true/>
+    <key>NSUserNotificationUsageDescription</key>
+    <string>Gearbox uses notifications to alert you when scheduled tasks complete or fail.</string>
 </dict>
 </plist>
 EOF

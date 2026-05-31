@@ -40,7 +40,19 @@ struct MenuBarContentView: View {
                             .font(.system(size: 13))
                     }
                     .buttonStyle(.plain)
-                    
+                    .help("Open Dashboard")
+
+                    Button(action: {
+                        openWindow(id: "notification-settings")
+                        NSApp.activate(ignoringOtherApps: true)
+                    }) {
+                        Image(systemName: "gear")
+                            .font(.system(size: 13))
+                            .foregroundColor(.secondary)
+                    }
+                    .buttonStyle(.plain)
+                    .help("Notification Settings")
+
                     Button(action: {
                         NSApplication.shared.terminate(nil)
                     }) {
@@ -49,6 +61,7 @@ struct MenuBarContentView: View {
                             .foregroundColor(.secondary)
                     }
                     .buttonStyle(.plain)
+                    .help("Quit Gearbox")
                 }
             }
             .padding(.horizontal, 16)

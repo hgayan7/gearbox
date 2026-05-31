@@ -22,6 +22,7 @@ https://github.com/user-attachments/assets/51500ad3-2145-4a78-9967-f05fe34f038b
 ## Features
 
 - **Native macOS Menu Bar UI**: Monitor and control tasks directly from your menu bar with a polished Swift-based app.
+- **System Notifications**: Native macOS notifications for task completions (Success/Failure alerts) so you know when a background job finishes.
 - **Shared Create/Edit Task Editor**: Create new automations and update existing ones from the same native editor.
 - **Advanced Execution Settings**: Configure raw commands, working directory, shell, and per-task environment variables.
 - **Live Log Streaming**: Watch your automations execute in real-time with built-in auto-scrolling. 📡
@@ -96,6 +97,10 @@ From the desktop window you can:
 - Preview the next scheduled runs before saving
 - Switch between guided script selection and raw custom commands
 - Set per-task shell, working directory, and environment variables
+
+From the Menu Bar extra, click the **⚙️ Gear Icon** to open the **Notification Settings** panel where you can:
+- Independently toggle notifications for task successes and failures.
+- Check current system permission status and quickly link to System Settings if notification permissions are denied.
 
 ## Development
 

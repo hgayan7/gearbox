@@ -1,7 +1,7 @@
 #!/bin/bash
 set -e
 
-VERSION="1.1.1"
+VERSION="1.2.0"
 
 echo "Setting up Gearbox..."
 
@@ -10,14 +10,15 @@ PROJECT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 VENV_DIR="$PROJECT_DIR/venv"
 VENV_BIN="$VENV_DIR/bin/python3"
 
-if [ ! -d "$VENV_DIR" ]; then
-    echo "Creating virtual environment..."
-    python3 -m venv "$VENV_DIR"
+if [ ! -f "$VENV_BIN" ] || ! "$VENV_BIN" -c "import click, apscheduler, cron_descriptor" 2>/dev/null; then
+    echo "Python environment missing or stale — rebuilding..."
+    rm -rf "$VENV_DIR"
+    python3.11 -m venv "$VENV_DIR"
 fi
 
 echo "Installing dependencies..."
-"$VENV_BIN" -m pip install --upgrade pip
-"$VENV_BIN" -m pip install -r "$PROJECT_DIR/requirements.txt"
+"$VENV_BIN" -m pip install -q --upgrade pip
+"$VENV_BIN" -m pip install -q -r "$PROJECT_DIR/requirements.txt"
 
 LAUNCH_DIR="$HOME/Library/LaunchAgents"
 LAUNCH_DOMAIN="gui/$(id -u)"
@@ -74,6 +75,8 @@ cat > "$PROJECT_DIR/GearboxUI/build/GearboxUI.app/Contents/Info.plist" <<EOF
     <string>7</string>
     <key>LSUIElement</key>
     <true/>
+    <key>NSUserNotificationUsageDescription</key>
+    <string>Gearbox uses notifications to alert you when scheduled tasks complete or fail.</string>
 </dict>
 </plist>
 EOF

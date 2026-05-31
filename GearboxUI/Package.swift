@@ -11,7 +11,10 @@ let package = Package(
             name: "GearboxUI",
             dependencies: [],
             path: "Sources/GearboxUI",
-            exclude: ["Resources"]
+            exclude: ["Resources"],
+            linkerSettings: [
+                .linkedFramework("UserNotifications")
+            ]
         ),
         .testTarget(
             name: "GearboxUITests",
