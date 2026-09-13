@@ -14,6 +14,15 @@ struct Task: Identifiable, Decodable {
     let environment: [String: String]
     let shell: String?
     var isPaused: Bool
+    let triggerType: String
+    let watchPath: String?
+    let timeoutSeconds: Int
+    let maxRetries: Int
+    let retryDelaySeconds: Int
+    let requiresAcPower: Bool
+    let preventSleep: Bool
+    let onSuccessTaskId: String?
+    let onFailureTaskId: String?
     
     enum CodingKeys: String, CodingKey {
         case id, name, command, schedule
@@ -23,6 +32,15 @@ struct Task: Identifiable, Decodable {
         case environmentJSON = "environment_json"
         case shell
         case isPaused = "is_paused"
+        case triggerType = "trigger_type"
+        case watchPath = "watch_path"
+        case timeoutSeconds = "timeout_seconds"
+        case maxRetries = "max_retries"
+        case retryDelaySeconds = "retry_delay_seconds"
+        case requiresAcPower = "requires_ac_power"
+        case preventSleep = "prevent_sleep"
+        case onSuccessTaskId = "on_success_task_id"
+        case onFailureTaskId = "on_failure_task_id"
     }
     
     init(
@@ -35,7 +53,16 @@ struct Task: Identifiable, Decodable {
         workingDirectory: String?,
         environment: [String: String],
         shell: String?,
-        isPaused: Bool
+        isPaused: Bool,
+        triggerType: String = "cron",
+        watchPath: String? = nil,
+        timeoutSeconds: Int = 0,
+        maxRetries: Int = 0,
+        retryDelaySeconds: Int = 10,
+        requiresAcPower: Bool = false,
+        preventSleep: Bool = false,
+        onSuccessTaskId: String? = nil,
+        onFailureTaskId: String? = nil
     ) {
         self.id = id
         self.name = name
@@ -47,6 +74,15 @@ struct Task: Identifiable, Decodable {
         self.environment = environment
         self.shell = shell
         self.isPaused = isPaused
+        self.triggerType = triggerType
+        self.watchPath = watchPath
+        self.timeoutSeconds = timeoutSeconds
+        self.maxRetries = maxRetries
+        self.retryDelaySeconds = retryDelaySeconds
+        self.requiresAcPower = requiresAcPower
+        self.preventSleep = preventSleep
+        self.onSuccessTaskId = onSuccessTaskId
+        self.onFailureTaskId = onFailureTaskId
     }
     
     init(from decoder: Decoder) throws {
@@ -55,7 +91,7 @@ struct Task: Identifiable, Decodable {
         name = try container.decode(String.self, forKey: .name)
         command = try container.decode(String.self, forKey: .command)
         schedule = try container.decode(String.self, forKey: .schedule)
-        scheduleDesc = try container.decode(String.self, forKey: .scheduleDesc)
+        scheduleDesc = (try? container.decodeIfPresent(String.self, forKey: .scheduleDesc)) ?? schedule
         rawCommand = try container.decodeIfPresent(String.self, forKey: .rawCommand)
         workingDirectory = try container.decodeIfPresent(String.self, forKey: .workingDirectory)
         shell = try container.decodeIfPresent(String.self, forKey: .shell)
@@ -78,6 +114,31 @@ struct Task: Identifiable, Decodable {
         } else {
             isPaused = false
         }
+
+        triggerType = (try? container.decodeIfPresent(String.self, forKey: .triggerType)) ?? "cron"
+        watchPath = try? container.decodeIfPresent(String.self, forKey: .watchPath)
+        timeoutSeconds = (try? container.decodeIfPresent(Int.self, forKey: .timeoutSeconds)) ?? 0
+        maxRetries = (try? container.decodeIfPresent(Int.self, forKey: .maxRetries)) ?? 0
+        retryDelaySeconds = (try? container.decodeIfPresent(Int.self, forKey: .retryDelaySeconds)) ?? 10
+
+        if let boolVal = try? container.decode(Bool.self, forKey: .requiresAcPower) {
+            requiresAcPower = boolVal
+        } else if let intVal = try? container.decode(Int.self, forKey: .requiresAcPower) {
+            requiresAcPower = intVal != 0
+        } else {
+            requiresAcPower = false
+        }
+
+        if let boolVal = try? container.decode(Bool.self, forKey: .preventSleep) {
+            preventSleep = boolVal
+        } else if let intVal = try? container.decode(Int.self, forKey: .preventSleep) {
+            preventSleep = intVal != 0
+        } else {
+            preventSleep = false
+        }
+
+        onSuccessTaskId = try? container.decodeIfPresent(String.self, forKey: .onSuccessTaskId)
+        onFailureTaskId = try? container.decodeIfPresent(String.self, forKey: .onFailureTaskId)
     }
 }
 
@@ -90,6 +151,8 @@ struct Run: Identifiable, Codable {
     let exitCode: Int
     let stdout: String
     let stderr: String
+    let retryCount: Int
+    let triggerSource: String
     
     enum CodingKeys: String, CodingKey {
         case id, status, stdout, stderr
@@ -97,6 +160,46 @@ struct Run: Identifiable, Codable {
         case startedAt = "started_at"
         case endedAt = "ended_at"
         case exitCode = "exit_code"
+        case retryCount = "retry_count"
+        case triggerSource = "trigger_source"
+    }
+
+    init(
+        id: String,
+        taskId: String,
+        status: String,
+        startedAt: String,
+        endedAt: String,
+        exitCode: Int,
+        stdout: String,
+        stderr: String,
+        retryCount: Int = 0,
+        triggerSource: String = "schedule"
+    ) {
+        self.id = id
+        self.taskId = taskId
+        self.status = status
+        self.startedAt = startedAt
+        self.endedAt = endedAt
+        self.exitCode = exitCode
+        self.stdout = stdout
+        self.stderr = stderr
+        self.retryCount = retryCount
+        self.triggerSource = triggerSource
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decode(String.self, forKey: .id)
+        taskId = try container.decode(String.self, forKey: .taskId)
+        status = try container.decode(String.self, forKey: .status)
+        startedAt = try container.decode(String.self, forKey: .startedAt)
+        endedAt = try container.decode(String.self, forKey: .endedAt)
+        exitCode = try container.decode(Int.self, forKey: .exitCode)
+        stdout = try container.decode(String.self, forKey: .stdout)
+        stderr = try container.decode(String.self, forKey: .stderr)
+        retryCount = (try? container.decodeIfPresent(Int.self, forKey: .retryCount)) ?? 0
+        triggerSource = (try? container.decodeIfPresent(String.self, forKey: .triggerSource)) ?? "schedule"
     }
 }
 
@@ -107,6 +210,24 @@ class DatabaseManager: ObservableObject {
     @Published var recentRuns: [Run] = []
     @Published var activeTaskIds: Set<String> = []
     @Published var hasFailures: Bool = false
+
+    var hasActiveRun: Bool {
+        !activeTaskIds.isEmpty || recentRuns.contains(where: { $0.status == "running" })
+    }
+
+    var recentFailureCount: Int {
+        recentRuns.filter { $0.status == "failed" }.count
+    }
+
+    var nextUpcomingTaskSummary: String? {
+        let activeTasks = tasks.filter { !$0.isPaused }
+        if let firstCron = activeTasks.first(where: { $0.triggerType == "cron" }) {
+            return "\(firstCron.name): \(firstCron.scheduleDesc)"
+        } else if let firstWatch = activeTasks.first(where: { $0.triggerType == "file_watch" }) {
+            return "\(firstWatch.name): On file change"
+        }
+        return nil
+    }
     
     private var db: OpaquePointer?
     private let dbPath = NSString(string: "~/.gearbox/gearbox.db").expandingTildeInPath
@@ -212,7 +333,7 @@ class DatabaseManager: ObservableObject {
 
         let process = Process()
         process.executableURL = URL(fileURLWithPath: executablePath)
-        process.arguments = ["-c", "import sys; raise SystemExit(sys.version_info[:2] != (3, 11))"]
+        process.arguments = ["-c", "import sys; raise SystemExit(sys.version_info[0] != 3 or sys.version_info[1] < 9)"]
         process.standardOutput = Pipe()
         process.standardError = Pipe()
 
@@ -289,6 +410,9 @@ class DatabaseManager: ObservableObject {
         }
 
         for candidate in [
+            "/opt/homebrew/bin/python3",
+            "/usr/local/bin/python3",
+            "/usr/bin/python3",
             "/opt/homebrew/opt/python@3.11/bin/python3.11",
             "/usr/local/opt/python@3.11/bin/python3.11",
             "/opt/homebrew/bin/python3.11",
@@ -299,12 +423,12 @@ class DatabaseManager: ObservableObject {
             }
         }
 
-        if let python311 = commandPath("python3.11"), let usablePython311 = usablePythonPath(python311) {
-            return usablePython311
-        }
-
         if let python3 = commandPath("python3"), let usablePython3 = usablePythonPath(python3) {
             return usablePython3
+        }
+
+        if let python311 = commandPath("python3.11"), let usablePython311 = usablePythonPath(python311) {
+            return usablePython311
         }
 
         return "python3"
@@ -354,6 +478,54 @@ class DatabaseManager: ObservableObject {
             print("Failed to sync schedules: \(error)")
         }
     }
+
+    func exportConfiguration(to destinationURL: URL, format: String = "yaml", completion: @escaping (Result<Void, Error>) -> Void) {
+        DispatchQueue.global(qos: .userInitiated).async {
+            let process = Process()
+            self.configurePythonProcess(process, arguments: ["export", "-o", destinationURL.path, "--format", format])
+            do {
+                try process.run()
+                process.waitUntilExit()
+                DispatchQueue.main.async {
+                    if process.terminationStatus == 0 {
+                        completion(.success(()))
+                    } else {
+                        completion(.failure(NSError(domain: "Gearbox", code: Int(process.terminationStatus), userInfo: [NSLocalizedDescriptionKey: "Export failed with exit code \(process.terminationStatus)"])))
+                    }
+                }
+            } catch {
+                DispatchQueue.main.async {
+                    completion(.failure(error))
+                }
+            }
+        }
+    }
+
+    func applyConfiguration(from sourceURL: URL, prune: Bool = false, completion: @escaping (Result<Void, Error>) -> Void) {
+        DispatchQueue.global(qos: .userInitiated).async {
+            let process = Process()
+            var args = ["apply", "-f", sourceURL.path]
+            if prune { args.append("--prune") }
+            self.configurePythonProcess(process, arguments: args)
+            do {
+                try process.run()
+                process.waitUntilExit()
+                DispatchQueue.main.async {
+                    self.fetchData()
+                    if process.terminationStatus == 0 {
+                        completion(.success(()))
+                    } else {
+                        completion(.failure(NSError(domain: "Gearbox", code: Int(process.terminationStatus), userInfo: [NSLocalizedDescriptionKey: "Apply failed with exit code \(process.terminationStatus)"])))
+                    }
+                }
+            } catch {
+                DispatchQueue.main.async {
+                    completion(.failure(error))
+                }
+            }
+        }
+    }
+
 
     private func formatDisplayDate(_ isoString: String) -> String {
         if isoString.isEmpty { return "" }
@@ -447,7 +619,9 @@ class DatabaseManager: ObservableObject {
 
         var newTasks: [Task] = []
         let taskQuery = """
-        SELECT id, name, command, schedule, is_paused, schedule_desc, raw_command, working_directory, environment_json, shell
+        SELECT id, name, command, schedule, is_paused, schedule_desc, raw_command, working_directory, environment_json, shell,
+               trigger_type, watch_path, timeout_seconds, max_retries, retry_delay_seconds, requires_ac_power, prevent_sleep,
+               on_success_task_id, on_failure_task_id
         FROM tasks
         ORDER BY name ASC;
         """
@@ -466,6 +640,16 @@ class DatabaseManager: ObservableObject {
                 let environmentJSON = stringValue(from: stmt, index: 8)
                 let shell = stringValue(from: stmt, index: 9)
 
+                let triggerType = stringValue(from: stmt, index: 10) ?? "cron"
+                let watchPath = stringValue(from: stmt, index: 11)
+                let timeoutSeconds = Int(sqlite3_column_int(stmt, 12))
+                let maxRetries = Int(sqlite3_column_int(stmt, 13))
+                let retryDelaySeconds = Int(sqlite3_column_int(stmt, 14))
+                let requiresAcPower = sqlite3_column_int(stmt, 15) != 0
+                let preventSleep = sqlite3_column_int(stmt, 16) != 0
+                let onSuccessTaskId = stringValue(from: stmt, index: 17)
+                let onFailureTaskId = stringValue(from: stmt, index: 18)
+
                 newTasks.append(Task(
                     id: id,
                     name: name,
@@ -476,7 +660,16 @@ class DatabaseManager: ObservableObject {
                     workingDirectory: workingDirectory,
                     environment: environmentDictionary(from: environmentJSON),
                     shell: shell,
-                    isPaused: isPaused
+                    isPaused: isPaused,
+                    triggerType: triggerType,
+                    watchPath: watchPath,
+                    timeoutSeconds: timeoutSeconds,
+                    maxRetries: maxRetries,
+                    retryDelaySeconds: retryDelaySeconds,
+                    requiresAcPower: requiresAcPower,
+                    preventSleep: preventSleep,
+                    onSuccessTaskId: onSuccessTaskId,
+                    onFailureTaskId: onFailureTaskId
                 ))
             }
         }
@@ -493,7 +686,7 @@ class DatabaseManager: ObservableObject {
         sqlite3_finalize(stmt)
         
         var newRuns: [Run] = []
-        let runQuery = "SELECT id, task_id, status, started_at, ended_at, exit_code, stdout, stderr FROM runs ORDER BY started_at DESC LIMIT 5;"
+        let runQuery = "SELECT id, task_id, status, started_at, ended_at, exit_code, stdout, stderr, retry_count, trigger_source FROM runs ORDER BY started_at DESC LIMIT 5;"
         if sqlite3_prepare_v2(db, runQuery, -1, &stmt, nil) == SQLITE_OK {
             while sqlite3_step(stmt) == SQLITE_ROW {
                 let id = String(cString: sqlite3_column_text(stmt, 0))
@@ -513,8 +706,22 @@ class DatabaseManager: ObservableObject {
                 
                 let stderrPtr = sqlite3_column_text(stmt, 7)
                 let stderr = stderrPtr != nil ? String(cString: stderrPtr!) : ""
+
+                let retryCount = Int(sqlite3_column_int(stmt, 8))
+                let triggerSource = stringValue(from: stmt, index: 9) ?? "schedule"
                 
-                newRuns.append(Run(id: id, taskId: taskId, status: status, startedAt: startedAt, endedAt: endedAt, exitCode: exitCode, stdout: stdout, stderr: stderr))
+                newRuns.append(Run(
+                    id: id,
+                    taskId: taskId,
+                    status: status,
+                    startedAt: startedAt,
+                    endedAt: endedAt,
+                    exitCode: exitCode,
+                    stdout: stdout,
+                    stderr: stderr,
+                    retryCount: retryCount,
+                    triggerSource: triggerSource
+                ))
             }
         }
         sqlite3_finalize(stmt)
@@ -597,7 +804,16 @@ class DatabaseManager: ObservableObject {
         rawCommand: String?,
         workingDirectory: String?,
         environment: [String: String],
-        shell: String?
+        shell: String?,
+        triggerType: String = "cron",
+        watchPath: String? = nil,
+        timeoutSeconds: Int = 0,
+        maxRetries: Int = 0,
+        retryDelaySeconds: Int = 10,
+        requiresAcPower: Bool = false,
+        preventSleep: Bool = false,
+        onSuccessTaskId: String? = nil,
+        onFailureTaskId: String? = nil
     ) throws {
         var arguments = ["add", name, schedule, command]
         if let rawCommand = TaskEditorParser.normalizedText(rawCommand) {
@@ -612,6 +828,33 @@ class DatabaseManager: ObservableObject {
         if let shell = TaskEditorParser.normalizedText(shell) {
             arguments += ["--shell", shell]
         }
+        if let triggerType = TaskEditorParser.normalizedText(triggerType) {
+            arguments += ["--trigger-type", triggerType]
+        }
+        if let watchPath = TaskEditorParser.normalizedText(watchPath) {
+            arguments += ["--watch-path", watchPath]
+        }
+        if timeoutSeconds > 0 {
+            arguments += ["--timeout", "\(timeoutSeconds)"]
+        }
+        if maxRetries > 0 {
+            arguments += ["--max-retries", "\(maxRetries)"]
+        }
+        if retryDelaySeconds != 10 {
+            arguments += ["--retry-delay", "\(retryDelaySeconds)"]
+        }
+        if requiresAcPower {
+            arguments += ["--requires-ac"]
+        }
+        if preventSleep {
+            arguments += ["--prevent-sleep"]
+        }
+        if let onSuccessTaskId = TaskEditorParser.normalizedText(onSuccessTaskId) {
+            arguments += ["--on-success", onSuccessTaskId]
+        }
+        if let onFailureTaskId = TaskEditorParser.normalizedText(onFailureTaskId) {
+            arguments += ["--on-failure", onFailureTaskId]
+        }
         try runCLI(arguments: arguments)
         DispatchQueue.main.async { self.fetchData() }
     }
@@ -624,7 +867,16 @@ class DatabaseManager: ObservableObject {
         rawCommand: String?,
         workingDirectory: String?,
         environment: [String: String],
-        shell: String?
+        shell: String?,
+        triggerType: String = "cron",
+        watchPath: String? = nil,
+        timeoutSeconds: Int = 0,
+        maxRetries: Int = 0,
+        retryDelaySeconds: Int = 10,
+        requiresAcPower: Bool = false,
+        preventSleep: Bool = false,
+        onSuccessTaskId: String? = nil,
+        onFailureTaskId: String? = nil
     ) throws {
         var arguments = ["update", existingName, name, schedule, command]
         if let rawCommand = TaskEditorParser.normalizedText(rawCommand) {
@@ -638,6 +890,33 @@ class DatabaseManager: ObservableObject {
         }
         if let shell = TaskEditorParser.normalizedText(shell) {
             arguments += ["--shell", shell]
+        }
+        if let triggerType = TaskEditorParser.normalizedText(triggerType) {
+            arguments += ["--trigger-type", triggerType]
+        }
+        if let watchPath = TaskEditorParser.normalizedText(watchPath) {
+            arguments += ["--watch-path", watchPath]
+        }
+        if timeoutSeconds > 0 {
+            arguments += ["--timeout", "\(timeoutSeconds)"]
+        }
+        if maxRetries > 0 {
+            arguments += ["--max-retries", "\(maxRetries)"]
+        }
+        if retryDelaySeconds != 10 {
+            arguments += ["--retry-delay", "\(retryDelaySeconds)"]
+        }
+        if requiresAcPower {
+            arguments += ["--requires-ac"]
+        }
+        if preventSleep {
+            arguments += ["--prevent-sleep"]
+        }
+        if let onSuccessTaskId = TaskEditorParser.normalizedText(onSuccessTaskId) {
+            arguments += ["--on-success", onSuccessTaskId]
+        }
+        if let onFailureTaskId = TaskEditorParser.normalizedText(onFailureTaskId) {
+            arguments += ["--on-failure", onFailureTaskId]
         }
         try runCLI(arguments: arguments)
         DispatchQueue.main.async { self.fetchData() }
@@ -683,7 +962,7 @@ class DatabaseManager: ObservableObject {
         guard db != nil else { return [] }
 
         var results: [Run] = []
-        let runQuery = "SELECT id, task_id, status, started_at, ended_at, exit_code, stdout, stderr FROM runs WHERE task_id = ? ORDER BY started_at DESC LIMIT 50;"
+        let runQuery = "SELECT id, task_id, status, started_at, ended_at, exit_code, stdout, stderr, retry_count, trigger_source FROM runs WHERE task_id = ? ORDER BY started_at DESC LIMIT 50;"
         var stmt: OpaquePointer?
         if sqlite3_prepare_v2(db, runQuery, -1, &stmt, nil) == SQLITE_OK {
             taskId.withCString { cString in
@@ -707,8 +986,22 @@ class DatabaseManager: ObservableObject {
                     
                     let stderrPtr = sqlite3_column_text(stmt, 7)
                     let stderr = stderrPtr != nil ? String(cString: stderrPtr!) : ""
+
+                    let retryCount = Int(sqlite3_column_int(stmt, 8))
+                    let triggerSource = stringValue(from: stmt, index: 9) ?? "schedule"
                     
-                    results.append(Run(id: id, taskId: tId, status: status, startedAt: startedAt, endedAt: endedAt, exitCode: exitCode, stdout: stdout, stderr: stderr))
+                    results.append(Run(
+                        id: id,
+                        taskId: tId,
+                        status: status,
+                        startedAt: startedAt,
+                        endedAt: endedAt,
+                        exitCode: exitCode,
+                        stdout: stdout,
+                        stderr: stderr,
+                        retryCount: retryCount,
+                        triggerSource: triggerSource
+                    ))
                 }
             }
         }

@@ -41,6 +41,27 @@ enum TaskEditorMode {
     }
 }
 
+enum TaskTriggerType: String, CaseIterable, Identifiable {
+    case cron = "Schedule"
+    case fileWatch = "Folder Watcher"
+
+    var id: String { rawValue }
+
+    var storageValue: String {
+        switch self {
+        case .cron: return "cron"
+        case .fileWatch: return "file_watch"
+        }
+    }
+
+    static func from(storageValue: String?) -> TaskTriggerType {
+        switch storageValue?.lowercased() {
+        case "file_watch": return .fileWatch
+        default: return .cron
+        }
+    }
+}
+
 enum TaskScheduleMode: String, CaseIterable, Identifiable {
     case preset = "Preset"
     case customCron = "Custom Cron"

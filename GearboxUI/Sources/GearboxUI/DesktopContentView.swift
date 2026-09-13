@@ -45,7 +45,24 @@ struct DesktopContentView: View {
             }
         }
         .toolbar {
-            ToolbarItem(placement: .primaryAction) {
+            ToolbarItemGroup(placement: .primaryAction) {
+                Menu {
+                    Button {
+                        exportYAML()
+                    } label: {
+                        Label("Export Configuration (YAML)...", systemImage: "square.and.arrow.up")
+                    }
+
+                    Button {
+                        importYAML()
+                    } label: {
+                        Label("Import Configuration (YAML)...", systemImage: "square.and.arrow.down")
+                    }
+                } label: {
+                    Label("GitOps", systemImage: "arrow.triangle.2.circlepath.doc.on.clipboard")
+                }
+                .help("Export or Import Gearboxfile YAML")
+
                 Button(action: { showingAddTask = true }) {
                     Label("Add Task", systemImage: "plus")
                 }
@@ -56,6 +73,25 @@ struct DesktopContentView: View {
         }
         .onReceive(timer) { _ in
             dbManager.fetchData()
+        }
+    }
+
+    private func exportYAML() {
+        let savePanel = NSSavePanel()
+        savePanel.nameFieldStringValue = "Gearboxfile.yaml"
+        savePanel.title = "Export Gearbox Automations"
+        if savePanel.runModal() == .OK, let url = savePanel.url {
+            let format = url.pathExtension.lowercased() == "json" ? "json" : "yaml"
+            dbManager.exportConfiguration(to: url, format: format) { _ in }
+        }
+    }
+
+    private func importYAML() {
+        let openPanel = NSOpenPanel()
+        openPanel.allowsMultipleSelection = false
+        openPanel.title = "Import Gearbox Automations"
+        if openPanel.runModal() == .OK, let url = openPanel.url {
+            dbManager.applyConfiguration(from: url) { _ in }
         }
     }
 }
@@ -144,6 +180,55 @@ struct TaskDetailView: View {
                             .cornerRadius(4)
                     }
                     .padding(.top, 4)
+
+                    HStack(spacing: 6) {
+                        if task.triggerType == "file_watch" {
+                            Label(task.watchPath ?? "Folder", systemImage: "folder.fill")
+                                .font(.system(size: 9, weight: .medium))
+                                .padding(.horizontal, 5)
+                                .padding(.vertical, 2)
+                                .background(Color.blue.opacity(0.1))
+                                .foregroundColor(.blue)
+                                .cornerRadius(4)
+                        }
+                        if task.timeoutSeconds > 0 {
+                            Label("\(task.timeoutSeconds)s", systemImage: "timer")
+                                .font(.system(size: 9, weight: .medium))
+                                .padding(.horizontal, 5)
+                                .padding(.vertical, 2)
+                                .background(Color.orange.opacity(0.1))
+                                .foregroundColor(.orange)
+                                .cornerRadius(4)
+                        }
+                        if task.requiresAcPower {
+                            Label("AC Only", systemImage: "bolt.fill")
+                                .font(.system(size: 9, weight: .medium))
+                                .padding(.horizontal, 5)
+                                .padding(.vertical, 2)
+                                .background(Color.green.opacity(0.1))
+                                .foregroundColor(.green)
+                                .cornerRadius(4)
+                        }
+                        if task.preventSleep {
+                            Label("Caffeinate", systemImage: "cup.and.saucer.fill")
+                                .font(.system(size: 9, weight: .medium))
+                                .padding(.horizontal, 5)
+                                .padding(.vertical, 2)
+                                .background(Color.purple.opacity(0.1))
+                                .foregroundColor(.purple)
+                                .cornerRadius(4)
+                        }
+                        if task.maxRetries > 0 {
+                            Label("\(task.maxRetries) retries", systemImage: "arrow.clockwise")
+                                .font(.system(size: 9, weight: .medium))
+                                .padding(.horizontal, 5)
+                                .padding(.vertical, 2)
+                                .background(Color.secondary.opacity(0.1))
+                                .foregroundColor(.secondary)
+                                .cornerRadius(4)
+                        }
+                    }
+                    .padding(.top, 4)
                 }
                 
                 Spacer()
@@ -206,6 +291,20 @@ struct TaskDetailView: View {
                         }
                         .width(100)
                         
+                        TableColumn("Trigger") { run in
+                            HStack(spacing: 4) {
+                                Text(run.triggerSource.capitalized)
+                                    .font(.system(size: 11))
+                                    .foregroundColor(.secondary)
+                                if run.retryCount > 0 {
+                                    Text("#\(run.retryCount)")
+                                        .font(.system(size: 9, weight: .bold))
+                                        .foregroundColor(.orange)
+                                }
+                            }
+                        }
+                        .width(80)
+
                         TableColumn("Started At") { run in
                             Text(run.startedAt)
                                 .font(.system(size: 11))
@@ -249,6 +348,7 @@ struct TaskDetailView: View {
         case "success": return ("checkmark.circle", .secondary)
         case "failed": return ("xmark.circle", .red.opacity(0.8))
         case "cancelled": return ("minus.circle", .gray)
+        case "skipped": return ("arrow.right.circle", .yellow)
         default: return ("questionmark.circle", .secondary)
         }
     }

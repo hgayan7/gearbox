@@ -54,6 +54,36 @@ struct NotificationSettingsView: View {
                         .foregroundColor(.red.opacity(0.8))
                 }
             }
+
+            // MARK: - Local Webhook
+            Section {
+                HStack {
+                    Image(systemName: "network")
+                        .font(.system(size: 14))
+                        .foregroundColor(.blue)
+                        .frame(width: 20)
+                    Text("Webhook Server")
+                    Spacer()
+                    if WebhookServer.shared.isRunning {
+                        Label("Port \(WebhookServer.shared.port)", systemImage: "checkmark.circle.fill")
+                            .foregroundColor(.green)
+                            .font(.system(size: 12, weight: .medium))
+                    } else {
+                        Label("Stopped", systemImage: "xmark.circle")
+                            .foregroundColor(.secondary)
+                            .font(.system(size: 12, weight: .medium))
+                    }
+                }
+
+                Text("Trigger tasks via: curl -X POST http://localhost:43272/run/<task>")
+                    .font(.system(size: 10, design: .monospaced))
+                    .foregroundColor(.secondary)
+            } header: {
+                Text("Integrations & Webhooks")
+            } footer: {
+                Text("Listens on localhost (127.0.0.1) for Stream Deck, Shortcuts, or local shell scripts.")
+                    .foregroundColor(.secondary)
+            }
         }
         .formStyle(.grouped)
         .frame(width: 400)

@@ -13,7 +13,9 @@ let package = Package(
             path: "Sources/GearboxUI",
             exclude: ["Resources"],
             linkerSettings: [
-                .linkedFramework("UserNotifications")
+                .linkedFramework("UserNotifications"),
+                .linkedFramework("Network"),
+                .linkedFramework("AppIntents")
             ]
         ),
         .testTarget(

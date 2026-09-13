@@ -13,7 +13,11 @@ VENV_BIN="$VENV_DIR/bin/python3"
 if [ ! -f "$VENV_BIN" ] || ! "$VENV_BIN" -c "import click, apscheduler, cron_descriptor" 2>/dev/null; then
     echo "Python environment missing or stale — rebuilding..."
     rm -rf "$VENV_DIR"
-    python3.11 -m venv "$VENV_DIR"
+    PYTHON_CMD="python3"
+    if command -v python3.11 >/dev/null 2>&1; then
+        PYTHON_CMD="python3.11"
+    fi
+    "$PYTHON_CMD" -m venv "$VENV_DIR"
     "$VENV_BIN" -m pip install -q --upgrade pip
     "$VENV_BIN" -m pip install -q -r "$PROJECT_DIR/requirements.txt"
     echo "Python environment ready."
@@ -71,6 +75,17 @@ cat > build/GearboxUI.app/Contents/Info.plist <<EOF
     <true/>
     <key>NSUserNotificationUsageDescription</key>
     <string>Gearbox uses notifications to alert you when scheduled tasks complete or fail.</string>
+    <key>CFBundleURLTypes</key>
+    <array>
+        <dict>
+            <key>CFBundleURLName</key>
+            <string>com.gearbox.url</string>
+            <key>CFBundleURLSchemes</key>
+            <array>
+                <string>gearbox</string>
+            </array>
+        </dict>
+    </array>
 </dict>
 </plist>
 EOF

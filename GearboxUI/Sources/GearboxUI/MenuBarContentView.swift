@@ -70,25 +70,44 @@ struct MenuBarContentView: View {
             
             Divider()
             
-            // Engine Status
-            HStack {
-                Text(allPaused ? "System Paused" : "System Active")
-                    .font(.system(size: 10, weight: .medium))
-                    .foregroundColor(.secondary)
-                
-                Spacer()
-                
-                Button(allPaused ? "Resume All" : "Pause All") {
-                    withAnimation(.easeInOut(duration: 0.2)) {
-                        for task in dbManager.tasks {
-                            if task.isPaused != allPaused {
-                                dbManager.togglePause(task: task)
+            // Engine Status & Next Run
+            VStack(alignment: .leading, spacing: 5) {
+                HStack {
+                    HStack(spacing: 5) {
+                        Circle()
+                            .fill(dbManager.hasActiveRun ? Color.blue : (allPaused ? Color.orange : Color.green))
+                            .frame(width: 7, height: 7)
+                        Text(dbManager.hasActiveRun ? "Task Running..." : (allPaused ? "System Paused" : "System Active"))
+                            .font(.system(size: 11, weight: .medium))
+                            .foregroundColor(.primary)
+                    }
+                    
+                    Spacer()
+                    
+                    Button(allPaused ? "Resume All" : "Pause All") {
+                        withAnimation(.easeInOut(duration: 0.2)) {
+                            for task in dbManager.tasks {
+                                if task.isPaused != allPaused {
+                                    dbManager.togglePause(task: task)
+                                }
                             }
                         }
                     }
+                    .buttonStyle(.bordered)
+                    .controlSize(.small)
                 }
-                .buttonStyle(.bordered)
-                .controlSize(.small)
+                
+                if let nextSummary = dbManager.nextUpcomingTaskSummary {
+                    HStack(spacing: 4) {
+                        Image(systemName: "clock")
+                            .font(.system(size: 9))
+                            .foregroundColor(.secondary)
+                        Text("Next: \(nextSummary)")
+                            .font(.system(size: 10))
+                            .foregroundColor(.secondary)
+                            .lineLimit(1)
+                    }
+                }
             }
             .padding(.horizontal, 16)
             .padding(.vertical, 8)
@@ -180,6 +199,7 @@ struct MenuBarContentView: View {
         case "success": return ("checkmark.circle", .secondary)
         case "failed": return ("xmark.circle", .red.opacity(0.7))
         case "cancelled": return ("minus.circle", .gray)
+        case "skipped": return ("arrow.right.circle", .yellow)
         default: return ("questionmark.circle", .secondary)
         }
     }
@@ -199,7 +219,7 @@ struct MenuBarTaskRow: View {
                         .controlSize(.small)
                         .scaleEffect(0.5)
                 } else {
-                    Image(systemName: task.isPaused ? "pause.circle" : "play.circle.fill")
+                    Image(systemName: task.isPaused ? "pause.circle" : (task.triggerType == "file_watch" ? "folder.circle.fill" : "play.circle.fill"))
                         .font(.system(size: 14))
                         .foregroundColor(task.isPaused ? .secondary : .accentColor)
                 }
@@ -209,7 +229,7 @@ struct MenuBarTaskRow: View {
             VStack(alignment: .leading, spacing: 1) {
                 Text(task.name)
                     .font(.system(size: 13, weight: .medium))
-                Text(task.scheduleDesc)
+                Text(task.triggerType == "file_watch" ? "Watch: \((task.watchPath as NSString?)?.lastPathComponent ?? "Folder")" : task.scheduleDesc)
                     .font(.system(size: 10))
                     .foregroundColor(.secondary)
             }

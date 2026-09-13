@@ -8,6 +8,8 @@ struct TaskFormView: View {
     let mode: TaskEditorMode
 
     @State private var name: String
+    @State private var triggerType: TaskTriggerType
+    @State private var watchPath: String
     @State private var scheduleMode: TaskScheduleMode
     @State private var schedules: [ScheduleItem]
     @State private var customCronSchedule: String
@@ -21,6 +23,14 @@ struct TaskFormView: View {
     @State private var workingDirectory: String
     @State private var shellPath: String
     @State private var environmentRows: [EnvironmentVariableRow]
+
+    @State private var timeoutSeconds: Int
+    @State private var requiresAcPower: Bool
+    @State private var preventSleep: Bool
+    @State private var maxRetries: Int
+    @State private var retryDelaySeconds: Int
+    @State private var onSuccessTaskId: String
+    @State private var onFailureTaskId: String
 
     @State private var schedulePreview: SchedulePreview?
     @State private var schedulePreviewError: String?
@@ -46,6 +56,8 @@ struct TaskFormView: View {
         let presetSchedules = task.flatMap { TaskEditorParser.parsePresetSchedules(schedule: $0.schedule) } ?? [ScheduleItem()]
 
         self._name = State(initialValue: task?.name ?? "")
+        self._triggerType = State(initialValue: TaskTriggerType.from(storageValue: task?.triggerType))
+        self._watchPath = State(initialValue: task?.watchPath ?? "")
         self._scheduleMode = State(initialValue: task.flatMap { TaskEditorParser.parsePresetSchedules(schedule: $0.schedule) } == nil ? .customCron : .preset)
         self._schedules = State(initialValue: presetSchedules)
         self._customCronSchedule = State(initialValue: task?.schedule ?? "")
@@ -58,13 +70,26 @@ struct TaskFormView: View {
         self._workingDirectory = State(initialValue: inferredExecution.workingDirectory ?? "")
         self._shellPath = State(initialValue: task?.shell ?? "/bin/zsh")
         self._environmentRows = State(initialValue: TaskEditorParser.environmentRows(from: task?.environment ?? [:]))
+        self._timeoutSeconds = State(initialValue: task?.timeoutSeconds ?? 0)
+        self._requiresAcPower = State(initialValue: task?.requiresAcPower ?? false)
+        self._preventSleep = State(initialValue: task?.preventSleep ?? false)
+        self._maxRetries = State(initialValue: task?.maxRetries ?? 0)
+        self._retryDelaySeconds = State(initialValue: task?.retryDelaySeconds ?? 10)
+        self._onSuccessTaskId = State(initialValue: task?.onSuccessTaskId ?? "")
+        self._onFailureTaskId = State(initialValue: task?.onFailureTaskId ?? "")
         self._schedulePreview = State(initialValue: nil)
         self._schedulePreviewError = State(initialValue: nil)
         self._errorMessage = State(initialValue: nil)
     }
 
     private var canSave: Bool {
-        !trimmedName.isEmpty && resolvedCommandValidationError == nil
+        if trimmedName.isEmpty || resolvedCommandValidationError != nil {
+            return false
+        }
+        if triggerType == .fileWatch && watchPath.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            return false
+        }
+        return true
     }
 
     private var trimmedName: String {
@@ -112,8 +137,10 @@ struct TaskFormView: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 22) {
                     nameSection
-                    scheduleSection
+                    triggerSection
                     executionSection
+                    safetySection
+                    resilienceSection
                     environmentSection
                     resolvedCommandSection
                 }
@@ -160,6 +187,62 @@ struct TaskFormView: View {
             TextField("Daily Data Backup", text: $name)
                 .textFieldStyle(.roundedBorder)
         }
+    }
+
+    private var triggerSection: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("Trigger")
+                .font(.system(size: 11, weight: .medium))
+
+            Picker("Trigger Type", selection: $triggerType) {
+                ForEach(TaskTriggerType.allCases) { type in
+                    Text(type.rawValue).tag(type)
+                }
+            }
+            .pickerStyle(.segmented)
+
+            switch triggerType {
+            case .cron:
+                scheduleSection
+            case .fileWatch:
+                folderWatchSection
+            }
+        }
+    }
+
+    private var folderWatchSection: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("Watch Directory")
+                .font(.system(size: 11, weight: .medium))
+                .foregroundStyle(.secondary)
+
+            HStack(spacing: 8) {
+                TextField("e.g. /Users/name/Downloads", text: $watchPath)
+                    .textFieldStyle(.roundedBorder)
+
+                Button("Choose Folder...") {
+                    chooseWatchFolder()
+                }
+            }
+
+            Text("Gearbox will automatically execute this automation whenever files are created or modified in this folder.")
+                .font(.system(size: 11))
+                .foregroundStyle(.secondary)
+        }
+        .padding(14)
+        .background(Color.primary.opacity(0.02))
+        .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+    }
+
+    private func chooseWatchFolder() {
+        let panel = NSOpenPanel()
+        panel.allowsMultipleSelection = false
+        panel.canChooseDirectories = true
+        panel.canChooseFiles = false
+        panel.canCreateDirectories = true
+
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        watchPath = url.path
     }
 
     private var scheduleSection: some View {
@@ -466,6 +549,118 @@ struct TaskFormView: View {
         }
     }
 
+    private var safetySection: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("Execution Safety & Battery")
+                .font(.system(size: 11, weight: .medium))
+
+            VStack(alignment: .leading, spacing: 10) {
+                HStack {
+                    Text("Timeout (seconds):")
+                        .font(.system(size: 12))
+                    Spacer()
+                    TextField("0 for unlimited", value: $timeoutSeconds, formatter: NumberFormatter())
+                        .frame(width: 100)
+                        .textFieldStyle(.roundedBorder)
+                }
+
+                Divider()
+
+                Toggle(isOn: $requiresAcPower) {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Require AC Power")
+                            .font(.system(size: 12, weight: .medium))
+                        Text("Skip execution when running on MacBook battery to preserve power.")
+                            .font(.system(size: 10))
+                            .foregroundStyle(.secondary)
+                    }
+                }
+                .toggleStyle(.checkbox)
+
+                Divider()
+
+                Toggle(isOn: $preventSleep) {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Prevent Sleep While Running (Caffeinate)")
+                            .font(.system(size: 12, weight: .medium))
+                        Text("Keeps the Mac awake until the automation finishes executing.")
+                            .font(.system(size: 10))
+                            .foregroundStyle(.secondary)
+                    }
+                }
+                .toggleStyle(.checkbox)
+            }
+            .padding(14)
+            .background(Color.primary.opacity(0.02))
+            .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+        }
+    }
+
+    private var resilienceSection: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("Workflows & Retries")
+                .font(.system(size: 11, weight: .medium))
+
+            VStack(alignment: .leading, spacing: 10) {
+                HStack {
+                    Text("Max Retries on Failure:")
+                        .font(.system(size: 12))
+                    Spacer()
+                    Picker("", selection: $maxRetries) {
+                        Text("None (0)").tag(0)
+                        Text("1 retry").tag(1)
+                        Text("2 retries").tag(2)
+                        Text("3 retries").tag(3)
+                        Text("5 retries").tag(5)
+                    }
+                    .frame(width: 130)
+                }
+
+                if maxRetries > 0 {
+                    HStack {
+                        Text("Retry Delay (seconds):")
+                            .font(.system(size: 12))
+                        Spacer()
+                        TextField("Seconds", value: $retryDelaySeconds, formatter: NumberFormatter())
+                            .frame(width: 100)
+                            .textFieldStyle(.roundedBorder)
+                    }
+                }
+
+                Divider()
+
+                HStack {
+                    Text("On Success, run:")
+                        .font(.system(size: 12))
+                    Spacer()
+                    Picker("", selection: $onSuccessTaskId) {
+                        Text("None").tag("")
+                        ForEach(dbManager.tasks.filter { $0.name != trimmedName }) { t in
+                            Text(t.name).tag(t.id)
+                        }
+                    }
+                    .frame(width: 160)
+                }
+
+                HStack {
+                    Text("On Failure, run:")
+                        .font(.system(size: 12))
+                    Spacer()
+                    Picker("", selection: $onFailureTaskId) {
+                        Text("None").tag("")
+                        ForEach(dbManager.tasks.filter { $0.name != trimmedName }) { t in
+                            Text(t.name).tag(t.id)
+                        }
+                    }
+                    .frame(width: 160)
+                }
+            }
+            .padding(14)
+            .background(Color.primary.opacity(0.02))
+            .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+        }
+    }
+
     private var resolvedCommandSection: some View {
         VStack(alignment: .leading, spacing: 8) {
             Text("Resolved Command")
@@ -679,7 +874,12 @@ struct TaskFormView: View {
 
         do {
             let resolvedExecution = try resolvedExecution()
-            let resolvedSchedule = try resolvedSchedule()
+            let resolvedSchedule: String
+            if triggerType == .fileWatch {
+                resolvedSchedule = "watch"
+            } else {
+                resolvedSchedule = try self.resolvedSchedule()
+            }
             let normalizedShell = TaskEditorParser.normalizedText(shellPath) ?? "/bin/zsh"
 
             switch mode {
@@ -691,7 +891,16 @@ struct TaskFormView: View {
                     rawCommand: resolvedExecution.rawCommand,
                     workingDirectory: resolvedExecution.workingDirectory,
                     environment: filteredEnvironment,
-                    shell: normalizedShell
+                    shell: normalizedShell,
+                    triggerType: triggerType.storageValue,
+                    watchPath: triggerType == .fileWatch ? watchPath : nil,
+                    timeoutSeconds: timeoutSeconds,
+                    maxRetries: maxRetries,
+                    retryDelaySeconds: retryDelaySeconds,
+                    requiresAcPower: requiresAcPower,
+                    preventSleep: preventSleep,
+                    onSuccessTaskId: onSuccessTaskId.isEmpty ? nil : onSuccessTaskId,
+                    onFailureTaskId: onFailureTaskId.isEmpty ? nil : onFailureTaskId
                 )
             case .edit(let task):
                 try dbManager.updateTaskViaCLI(
@@ -702,7 +911,16 @@ struct TaskFormView: View {
                     rawCommand: resolvedExecution.rawCommand,
                     workingDirectory: resolvedExecution.workingDirectory,
                     environment: filteredEnvironment,
-                    shell: normalizedShell
+                    shell: normalizedShell,
+                    triggerType: triggerType.storageValue,
+                    watchPath: triggerType == .fileWatch ? watchPath : nil,
+                    timeoutSeconds: timeoutSeconds,
+                    maxRetries: maxRetries,
+                    retryDelaySeconds: retryDelaySeconds,
+                    requiresAcPower: requiresAcPower,
+                    preventSleep: preventSleep,
+                    onSuccessTaskId: onSuccessTaskId.isEmpty ? nil : onSuccessTaskId,
+                    onFailureTaskId: onFailureTaskId.isEmpty ? nil : onFailureTaskId
                 )
             }
 

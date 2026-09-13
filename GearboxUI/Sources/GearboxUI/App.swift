@@ -15,8 +15,33 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
         center.delegate = self
         center.requestAuthorization(options: [.alert, .sound]) { _, _ in }
 
+        let retryAction = UNNotificationAction(
+            identifier: "ACTION_RETRY",
+            title: "Retry Now",
+            options: [.foreground]
+        )
+        let viewLogsAction = UNNotificationAction(
+            identifier: "ACTION_VIEW_LOGS",
+            title: "View Logs",
+            options: [.foreground]
+        )
+        let failedCategory = UNNotificationCategory(
+            identifier: "GEARBOX_RUN_FAILED",
+            actions: [retryAction, viewLogsAction],
+            intentIdentifiers: [],
+            options: [.customDismissAction]
+        )
+        let successCategory = UNNotificationCategory(
+            identifier: "GEARBOX_RUN_SUCCESS",
+            actions: [viewLogsAction],
+            intentIdentifiers: [],
+            options: []
+        )
+        center.setNotificationCategories([failedCategory, successCategory])
+
         DatabaseManager.shared.syncSchedules()
         DatabaseManager.shared.fetchData()
+        WebhookServer.shared.start()
     }
 
     // Show notifications even when the app is in the foreground (menu bar open)
@@ -28,14 +53,21 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
         completionHandler([.banner, .sound])
     }
 
-    // Handle notification click: bring the running application to the front
+    // Handle notification clicks and actions
     func userNotificationCenter(
         _ center: UNUserNotificationCenter,
         didReceive response: UNNotificationResponse,
         withCompletionHandler completionHandler: @escaping () -> Void
     ) {
-        DispatchQueue.main.async {
-            NSApp.activate(ignoringOtherApps: true)
+        let userInfo = response.notification.request.content.userInfo
+        let taskName = userInfo["taskName"] as? String
+
+        if response.actionIdentifier == "ACTION_RETRY", let taskName = taskName {
+            DatabaseManager.shared.runTaskManually(name: taskName)
+        } else {
+            DispatchQueue.main.async {
+                NSApp.activate(ignoringOtherApps: true)
+            }
         }
         completionHandler()
     }
@@ -51,12 +83,32 @@ struct GearboxUIApp: App {
     var body: some Scene {
         Window("Gearbox", id: "dashboard") {
             DesktopContentView(dbManager: dbManager)
+                .onOpenURL { url in
+                    guard url.scheme?.lowercased() == "gearbox" else { return }
+                    if url.host == "run" {
+                        let taskName = url.path.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
+                        if !taskName.isEmpty {
+                            DatabaseManager.shared.runTaskManually(name: taskName)
+                        }
+                    }
+                }
         }
         
         MenuBarExtra {
             MenuBarContentView(dbManager: dbManager)
         } label: {
-            Image(nsImage: MenuBarIcon.appIcon)
+            HStack(spacing: 3) {
+                if dbManager.hasActiveRun {
+                    Image(systemName: "arrow.triangle.2.circlepath.circle.fill")
+                } else {
+                    Image(nsImage: MenuBarIcon.appIcon)
+                }
+                if dbManager.recentFailureCount > 0 {
+                    Circle()
+                        .fill(Color.red)
+                        .frame(width: 5, height: 5)
+                }
+            }
         }
         .menuBarExtraStyle(.window)
         .onChange(of: scenePhase) { phase in

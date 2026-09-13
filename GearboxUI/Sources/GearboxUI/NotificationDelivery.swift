@@ -14,11 +14,20 @@ extension DatabaseManager {
         switch status {
         case "success":
             content.body = "\u{2705} \(taskName) completed successfully"
+            content.categoryIdentifier = "GEARBOX_RUN_SUCCESS"
         case "failed":
             content.body = "\u{274C} \(taskName) failed (exit \(exitCode))"
+            content.categoryIdentifier = "GEARBOX_RUN_FAILED"
         default:
             return
         }
+
+        content.userInfo = [
+            "runId": runId,
+            "taskName": taskName,
+            "status": status,
+            "exitCode": exitCode
+        ]
 
         let request = UNNotificationRequest(
             identifier: runId,
