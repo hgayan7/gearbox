@@ -10,7 +10,7 @@ set -e
 PROJECT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 BUILD_DIR="$PROJECT_DIR/dist"
 APP_NAME="Gearbox"
-VERSION="1.2.0"
+VERSION="1.3.0"
 APP_BUNDLE="$BUILD_DIR/$APP_NAME.app"
 CONTENTS="$APP_BUNDLE/Contents"
 RESOURCES="$CONTENTS/Resources"
@@ -39,13 +39,21 @@ cp -R "$PROJECT_DIR/core" "$RESOURCES/python/"
 find "$RESOURCES/python" -type d -name "__pycache__" -prune -exec rm -rf {} +
 
 echo "⚙️ Creating Embedded Python Virtualenv..."
-# Use python3.11 from the system/homebrew to create the initial venv
-python3.11 -m venv "$RESOURCES/venv"
+PYTHON_BIN=""
+if command -v python3.11 >/dev/null 2>&1; then
+    PYTHON_BIN="python3.11"
+elif command -v python3 >/dev/null 2>&1; then
+    PYTHON_BIN="python3"
+else
+    echo "Python 3 not found" >&2
+    exit 1
+fi
+"$PYTHON_BIN" -m venv "$RESOURCES/venv"
 
 # Install dependencies into the embedded venv
 echo "pip: Installing dependencies into bundle..."
 "$RESOURCES/venv/bin/pip" install --upgrade pip
-"$RESOURCES/venv/bin/pip" install click apscheduler cron-descriptor pytz six tzlocal
+"$RESOURCES/venv/bin/pip" install -r "$PROJECT_DIR/requirements.txt" pytz six tzlocal
 
 echo "📜 Creating CLI Shim..."
 cp "$PROJECT_DIR/scripts/gearbox-shim.sh" "$MACOS/gearbox"

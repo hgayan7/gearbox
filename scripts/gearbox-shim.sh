@@ -16,17 +16,23 @@ SCRIPT_DIR="$(cd -P "$(dirname "$SOURCE")" && pwd)"
 APP_CONTENTS="$(cd "$SCRIPT_DIR/.." && pwd)"
 
 BUNDLED_PYTHON="$APP_CONTENTS/Resources/venv/bin/python3"
-BUNDLED_SITE_PACKAGES="$APP_CONTENTS/Resources/venv/lib/python3.11/site-packages"
+BUNDLED_SITE_PACKAGES="$(ls -d "$APP_CONTENTS/Resources/venv/lib"/python*/site-packages 2>/dev/null | head -n 1)"
 
-if [ -d "$BUNDLED_SITE_PACKAGES" ]; then
+if [ -n "$BUNDLED_SITE_PACKAGES" ] && [ -d "$BUNDLED_SITE_PACKAGES" ]; then
     export PYTHONPATH="$BUNDLED_SITE_PACKAGES${PYTHONPATH:+:$PYTHONPATH}"
 fi
 
 python_candidates=(
     "${GEARBOX_PYTHON:-}"
     "$BUNDLED_PYTHON"
-    "python3.11"
     "python3"
+    "python3.12"
+    "python3.11"
+    "python3.10"
+    "python3.9"
+    "/opt/homebrew/bin/python3"
+    "/usr/local/bin/python3"
+    "/usr/bin/python3"
     "/opt/homebrew/opt/python@3.11/bin/python3.11"
     "/usr/local/opt/python@3.11/bin/python3.11"
     "/opt/homebrew/bin/python3.11"
@@ -44,7 +50,7 @@ for python in "${python_candidates[@]}"; do
         resolved_python="$(command -v "$python")"
     fi
 
-    if [ -n "$resolved_python" ] && "$resolved_python" -c 'import sys; raise SystemExit(sys.version_info[:2] != (3, 11))' >/dev/null 2>&1; then
+    if [ -n "$resolved_python" ] && "$resolved_python" -c 'import sys; raise SystemExit(0 if sys.version_info >= (3, 9) else 1)' >/dev/null 2>&1; then
         exec "$resolved_python" "$APP_CONTENTS/Resources/python/cli.py" "$@"
     fi
 done
