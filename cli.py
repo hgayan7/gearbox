@@ -447,5 +447,156 @@ def preview_schedule(schedule):
         raise click.ClickException(str(e))
 
 
+@cli.command("export")
+@click.option("-o", "--output", default=None, help="Output file path (default: stdout).")
+@click.option("--format", "format_type", type=click.Choice(["yaml", "json"], case_sensitive=False), default="yaml", help="Output format.")
+def export_cmd(output, format_type):
+    """Export scheduled tasks to a declarative Gearboxfile (YAML or JSON)."""
+    from core import gitops
+    try:
+        content = gitops.export_spec(format_type=format_type)
+        if output:
+            out_path = Path(output).expanduser()
+            out_path.parent.mkdir(parents=True, exist_ok=True)
+            out_path.write_text(content)
+            click.secho(f"Successfully exported {len(TaskManager.get_tasks())} tasks to {output}", fg="green")
+        else:
+            click.echo(content)
+    except Exception as e:
+        raise click.ClickException(f"Export failed: {e}")
+
+
+@cli.command("apply")
+@click.option("-f", "--file", "file_path", required=True, type=click.Path(exists=True), help="Path to Gearboxfile specification.")
+@click.option("--prune", is_flag=True, help="Remove tasks not present in the specification.")
+def apply_cmd(file_path, prune):
+    """Apply a declarative Gearboxfile specification (YAML or JSON)."""
+    from core import gitops
+    try:
+        raw_content = Path(file_path).read_text()
+        tasks = gitops.load_spec(raw_content)
+        results = gitops.apply_spec(tasks, prune=prune)
+
+        click.secho(f"Applied specification from {file_path}:", bold=True)
+        if results["created"]:
+            click.secho(f"  + Created ({len(results['created'])}): {', '.join(results['created'])}", fg="green")
+        if results["updated"]:
+            click.secho(f"  ~ Updated ({len(results['updated'])}): {', '.join(results['updated'])}", fg="cyan")
+        if results["pruned"]:
+            click.secho(f"  - Pruned  ({len(results['pruned'])}): {', '.join(results['pruned'])}", fg="yellow")
+        if not results["created"] and not results["updated"] and not results["pruned"]:
+            click.secho("  All tasks already up to date.", fg="green")
+    except Exception as e:
+        raise click.ClickException(f"Apply failed: {e}")
+
+
+@cli.command("sync")
+@click.option("-f", "--file", "file_path", default=None, help="Path to Gearboxfile specification.")
+@click.option("--prune", is_flag=True, help="Remove tasks not present in the specification.")
+def sync_cmd(file_path, prune):
+    """Reconcile tasks from local Gearboxfile or dotfiles (~/.config/gearbox/Gearboxfile.yaml)."""
+    target = None
+    if file_path:
+        target = Path(file_path).expanduser()
+    else:
+        candidates = [
+            Path("Gearboxfile.yaml"),
+            Path("Gearboxfile.yml"),
+            Path("Gearboxfile.json"),
+            Path("~/.config/gearbox/Gearboxfile.yaml").expanduser(),
+            Path("~/.config/gearbox/Gearboxfile.yml").expanduser(),
+        ]
+        for c in candidates:
+            if c.exists():
+                target = c
+                break
+
+    if not target or not target.exists():
+        raise click.ClickException("No Gearboxfile found. Specify one with `-f <path>` or create `Gearboxfile.yaml`.")
+
+    click.secho(f"Syncing from {target}...", fg="blue")
+    from core import gitops
+    raw_content = target.read_text()
+    tasks = gitops.load_spec(raw_content)
+    results = gitops.apply_spec(tasks, prune=prune)
+
+    if results["created"]:
+        click.secho(f"  + Created ({len(results['created'])}): {', '.join(results['created'])}", fg="green")
+    if results["updated"]:
+        click.secho(f"  ~ Updated ({len(results['updated'])}): {', '.join(results['updated'])}", fg="cyan")
+    if results["pruned"]:
+        click.secho(f"  - Pruned  ({len(results['pruned'])}): {', '.join(results['pruned'])}", fg="yellow")
+    click.secho("Gearbox automations synchronized.", fg="green", bold=True)
+
+
+@cli.command("doctor")
+@click.option("--fix", is_flag=True, help="Automatically repair detected issues where safe.")
+@click.option("-v", "--verbose", is_flag=True, help="Show detailed diagnostic output.")
+def doctor_cmd(fix, verbose):
+    """Diagnose system health, permissions, LaunchAgents, and PATH issues."""
+    from core import doctor
+    diag = doctor.run_diagnostics(fix=fix)
+
+    click.secho("=== Gearbox System Doctor ===", bold=True, fg="blue")
+
+    # Python
+    py = diag["python"]
+    if py["version_ok"]:
+        click.secho(f"✔ Python Version: {py['python_version']} (Supported >= 3.9)", fg="green")
+    else:
+        click.secho(f"✖ Python Version: {py['python_version']} (Requires >= 3.9)", fg="red")
+    if verbose:
+        click.echo(f"  Executable: {py['executable']}")
+    if py["missing_packages"]:
+        click.secho(f"✖ Missing Packages: {', '.join(py['missing_packages'])}", fg="red")
+
+    # Storage
+    st = diag["storage"]
+    if st["db_exists"] and st["db_writable"]:
+        click.secho("✔ Database Storage: Writable and online", fg="green")
+    else:
+        click.secho("✖ Database Storage: Missing or permission denied", fg="red")
+    if st["mode_secure"]:
+        click.secho(f"✔ Runtime Directory: Mode {st['dir_mode']} (Secure)", fg="green")
+    else:
+        click.secho(f"⚠ Runtime Directory: Mode {st['dir_mode']} (Expected 0o700)", fg="yellow")
+
+    # Launchd
+    ld = diag["launchd"]
+    if ld["agents_writable"]:
+        click.secho("✔ LaunchAgents: Directory writable", fg="green")
+    else:
+        click.secho("✖ LaunchAgents: Directory not writable", fg="red")
+    if ld["ui_service_loaded"]:
+        click.secho("✔ Menu Bar UI: Active in launchd", fg="green")
+    else:
+        click.secho("⚠ Menu Bar UI: Not currently loaded in launchctl", fg="yellow")
+    if ld["orphaned_plists"]:
+        click.secho(f"⚠ Orphaned Launchd Plists: {len(ld['orphaned_plists'])} detected", fg="yellow")
+        if verbose:
+            for op in ld["orphaned_plists"]:
+                click.echo(f"    - {op}")
+
+    # PATH findings
+    findings = diag["path_findings"]
+    if not findings:
+        click.secho("✔ Task Command PATHs: All commands resolved", fg="green")
+    else:
+        click.secho(f"⚠ Command PATH Issues: {len(findings)} tasks need PATH configuration", fg="yellow")
+        for f in findings:
+            click.echo(f"    Task '{f['task_name']}': binary '{f['binary']}' ({f['issue']})")
+
+    # Fixes applied
+    if diag["fixes_applied"]:
+        click.echo()
+        click.secho("--- Fixes Applied ---", bold=True, fg="green")
+        for fix_msg in diag["fixes_applied"]:
+            click.secho(f"✔ {fix_msg}", fg="green")
+    elif not fix and (ld["orphaned_plists"] or findings or not st["mode_secure"]):
+        click.echo()
+        click.secho("Run `gearbox doctor --fix` to automatically repair these issues.", fg="cyan")
+
+
 if __name__ == '__main__':
     cli()
+
