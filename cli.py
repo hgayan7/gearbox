@@ -4,6 +4,7 @@ import re
 import sys
 import json
 import datetime
+from pathlib import Path
 from core import launchd
 from core.manager import TaskManager
 from core.db import init_db
@@ -102,15 +103,41 @@ def _runner_context() -> tuple[str, str]:
 @click.option('--working-directory', default=None, help='Working directory for the task.')
 @click.option('--env-json', default=None, help='JSON object of environment variables for the task.')
 @click.option('--shell', default=None, help='Shell used to execute the task, e.g. /bin/zsh.')
-def add(name, schedule, command, raw_command, working_directory, env_json, shell):
+@click.option('--trigger-type', default='cron', help='Trigger type: cron, file_watch, or system_event.')
+@click.option('--watch-path', default=None, help='Directory path to watch if trigger type is file_watch.')
+@click.option('--timeout', default=0, type=int, help='Timeout in seconds (0 = unlimited).')
+@click.option('--max-retries', default=0, type=int, help='Maximum retry attempts on failure.')
+@click.option('--retry-delay', default=10, type=int, help='Delay in seconds between retries.')
+@click.option('--requires-ac/--no-requires-ac', default=False, help='Only execute when Mac is on AC power.')
+@click.option('--prevent-sleep/--no-prevent-sleep', default=False, help='Prevent system sleep during execution (caffeinate).')
+@click.option('--on-success', default=None, help='Task name or ID to trigger upon successful completion.')
+@click.option('--on-failure', default=None, help='Task name or ID to trigger upon failure after all retries.')
+def add(name, schedule, command, raw_command, working_directory, env_json, shell,
+        trigger_type, watch_path, timeout, max_retries, retry_delay, requires_ac, prevent_sleep,
+        on_success, on_failure):
     """Add a new task.
     Examples:
       gearbox add my-task "daily | monday 10:00" "echo hello"
+      gearbox add watch-downloads "watch" "python process.py" --trigger-type file_watch --watch-path ~/Downloads
     """
-    cron_schedule = normalize_schedule_input(schedule)
     task_id = None
     try:
-        launchd.cron_schedule_to_calendar_entries(cron_schedule)
+        if trigger_type == "file_watch":
+            cron_schedule = schedule or "file_watch"
+        else:
+            cron_schedule = normalize_schedule_input(schedule)
+            launchd.cron_schedule_to_calendar_entries(cron_schedule)
+
+        succ_id = None
+        if on_success:
+            s_task = TaskManager.get_task_by_name(on_success) or TaskManager.get_task_by_id(on_success)
+            succ_id = s_task["id"] if s_task else on_success
+
+        fail_id = None
+        if on_failure:
+            f_task = TaskManager.get_task_by_name(on_failure) or TaskManager.get_task_by_id(on_failure)
+            fail_id = f_task["id"] if f_task else on_failure
+
         task_id = TaskManager.add_task(
             name,
             cron_schedule,
@@ -119,11 +146,20 @@ def add(name, schedule, command, raw_command, working_directory, env_json, shell
             working_directory=working_directory,
             environment_json=env_json,
             shell=shell,
+            trigger_type=trigger_type,
+            watch_path=watch_path,
+            timeout_seconds=timeout,
+            max_retries=max_retries,
+            retry_delay_seconds=retry_delay,
+            requires_ac_power=requires_ac,
+            prevent_sleep=prevent_sleep,
+            on_success_task_id=succ_id,
+            on_failure_task_id=fail_id,
         )
         task = TaskManager.get_task_by_id(task_id)
         python_executable, cli_script_path = _runner_context()
         launchd.install_task(task, python_executable, cli_script_path)
-        click.secho(f"Successfully added task '{name}' with schedule '{cron_schedule}'.", fg="green")
+        click.secho(f"Successfully added task '{name}' (trigger: {trigger_type}).", fg="green")
     except Exception as e:
         if task_id is not None:
             launchd.remove_task(task_id)
@@ -143,17 +179,41 @@ def add(name, schedule, command, raw_command, working_directory, env_json, shell
 @click.option('--working-directory', default=None, help='Working directory for the task.')
 @click.option('--env-json', default=None, help='JSON object of environment variables for the task.')
 @click.option('--shell', default=None, help='Shell used to execute the task, e.g. /bin/zsh.')
-def update(existing_name, name, schedule, command, raw_command, working_directory, env_json, shell):
+@click.option('--trigger-type', default='cron', help='Trigger type: cron, file_watch, or system_event.')
+@click.option('--watch-path', default=None, help='Directory path to watch if trigger type is file_watch.')
+@click.option('--timeout', default=0, type=int, help='Timeout in seconds (0 = unlimited).')
+@click.option('--max-retries', default=0, type=int, help='Maximum retry attempts on failure.')
+@click.option('--retry-delay', default=10, type=int, help='Delay in seconds between retries.')
+@click.option('--requires-ac/--no-requires-ac', default=False, help='Only execute when Mac is on AC power.')
+@click.option('--prevent-sleep/--no-prevent-sleep', default=False, help='Prevent system sleep during execution (caffeinate).')
+@click.option('--on-success', default=None, help='Task name or ID to trigger upon successful completion.')
+@click.option('--on-failure', default=None, help='Task name or ID to trigger upon failure after all retries.')
+def update(existing_name, name, schedule, command, raw_command, working_directory, env_json, shell,
+           trigger_type, watch_path, timeout, max_retries, retry_delay, requires_ac, prevent_sleep,
+           on_success, on_failure):
     """Update an existing task by name."""
     existing_task = TaskManager.get_task_by_name(existing_name)
     if not existing_task:
         click.secho(f"Task '{existing_name}' not found.", fg="red")
         return
 
-    cron_schedule = normalize_schedule_input(schedule)
-
     try:
-        launchd.cron_schedule_to_calendar_entries(cron_schedule)
+        if trigger_type == "file_watch":
+            cron_schedule = schedule or "file_watch"
+        else:
+            cron_schedule = normalize_schedule_input(schedule)
+            launchd.cron_schedule_to_calendar_entries(cron_schedule)
+
+        succ_id = None
+        if on_success:
+            s_task = TaskManager.get_task_by_name(on_success) or TaskManager.get_task_by_id(on_success)
+            succ_id = s_task["id"] if s_task else on_success
+
+        fail_id = None
+        if on_failure:
+            f_task = TaskManager.get_task_by_name(on_failure) or TaskManager.get_task_by_id(on_failure)
+            fail_id = f_task["id"] if f_task else on_failure
+
         task_id = TaskManager.update_task(
             existing_name,
             name,
@@ -163,6 +223,15 @@ def update(existing_name, name, schedule, command, raw_command, working_director
             working_directory=working_directory,
             environment_json=env_json,
             shell=shell,
+            trigger_type=trigger_type,
+            watch_path=watch_path,
+            timeout_seconds=timeout,
+            max_retries=max_retries,
+            retry_delay_seconds=retry_delay,
+            requires_ac_power=requires_ac,
+            prevent_sleep=prevent_sleep,
+            on_success_task_id=succ_id,
+            on_failure_task_id=fail_id,
         )
         updated_task = TaskManager.get_task_by_id(task_id)
         python_executable, cli_script_path = _runner_context()
@@ -197,15 +266,30 @@ def ls():
         click.secho("No tasks found.", fg="yellow")
         return
         
-    click.secho(f"{'NAME':<20} | {'SCHEDULE':<30} | {'STATUS':<10} | {'COMMAND'}", bold=True)
-    click.secho("-" * 85)
+    click.secho(f"{'NAME':<20} | {'TRIGGER':<24} | {'STATUS':<10} | {'FLAGS':<14} | {'COMMAND'}", bold=True)
+    click.secho("-" * 95)
     for t in tasks:
         status = "PAUSED" if t["is_paused"] else "ACTIVE"
         color = "yellow" if t["is_paused"] else "green"
-        desc = t.get('schedule_desc') or t['schedule']
-        click.secho(f"{t['name']:<20} | {desc:<30} | ", nl=False)
+        if t.get("trigger_type") == "file_watch":
+            desc = f"Watch: {t.get('watch_path') or '-'}"
+        else:
+            desc = t.get('schedule_desc') or t['schedule']
+
+        flags = []
+        if t.get("timeout_seconds"):
+            flags.append(f"{t['timeout_seconds']}s")
+        if t.get("requires_ac_power"):
+            flags.append("AC")
+        if t.get("prevent_sleep"):
+            flags.append("caff")
+        if t.get("max_retries"):
+            flags.append(f"retry:{t['max_retries']}")
+        flag_str = ",".join(flags) if flags else "-"
+
+        click.secho(f"{t['name']:<20} | {desc[:24]:<24} | ", nl=False)
         click.secho(f"{status:<10}", fg=color, nl=False)
-        click.secho(f" | {t['command']}")
+        click.secho(f" | {flag_str:<14} | {t['command']}")
 
 @cli.command()
 @click.argument('name')
@@ -247,14 +331,17 @@ def history(name, limit):
         click.secho(f"No run history for '{name}'.", fg="yellow")
         return
         
-    click.secho(f"{'STARTED AT':<28} | {'STATUS':<10} | {'EXIT':<5} | {'ENDED AT'}", bold=True)
-    click.secho("-" * 75)
+    click.secho(f"{'STARTED AT':<26} | {'STATUS':<10} | {'EXIT':<5} | {'SOURCE':<10} | {'ENDED AT'}", bold=True)
+    click.secho("-" * 80)
     for r in runs:
         color = "green" if r["status"] == "success" else ("red" if r["status"] == "failed" else "blue")
         exit_code_str = str(r['exit_code']) if r['exit_code'] is not None else '-'
-        click.secho(f"{r['started_at']:<28} | ", nl=False)
+        source_str = str(r.get('trigger_source') or 'schedule')
+        if r.get("retry_count"):
+            source_str += f" (r{r['retry_count']})"
+        click.secho(f"{r['started_at']:<26} | ", nl=False)
         click.secho(f"{r['status']:<10}", fg=color, nl=False)
-        click.secho(f" | {exit_code_str:<5} | {r['ended_at']}")
+        click.secho(f" | {exit_code_str:<5} | {source_str:<10} | {r['ended_at']}")
 
 @cli.command()
 @click.argument('name')
@@ -358,6 +445,7 @@ def preview_schedule(schedule):
         click.echo(json.dumps(schedule_preview_payload(schedule)))
     except Exception as e:
         raise click.ClickException(str(e))
+
 
 if __name__ == '__main__':
     cli()

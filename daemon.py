@@ -220,15 +220,17 @@ def sync_tasks_once(
         task_id = task["id"]
         db_task_ids.add(task_id)
         is_paused = bool(task["is_paused"])
+        trigger_type = task.get("trigger_type") or "cron"
         cron_str = task["schedule"]
         task_job_ids = [jid for jid in active_jobs.keys() if jid.startswith(task_id)]
         crons = [c.strip() for c in cron_str.split("|") if c.strip()]
 
-        if is_paused:
+        if is_paused or trigger_type != "cron":
             for jid in task_job_ids:
                 scheduler.remove_job(jid)
                 active_jobs.pop(jid, None)
-                logger.info("Removed paused job %s for task '%s'", jid, task["name"])
+                if is_paused:
+                    logger.info("Removed paused job %s for task '%s'", jid, task["name"])
             task_cron_map.pop(task_id, None)
             continue
 

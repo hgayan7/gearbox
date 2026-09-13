@@ -52,6 +52,51 @@ def init_db():
         cursor.execute("ALTER TABLE tasks ADD COLUMN shell TEXT")
     except sqlite3.OperationalError:
         pass
+
+    try:
+        cursor.execute("ALTER TABLE tasks ADD COLUMN trigger_type TEXT DEFAULT 'cron'")
+    except sqlite3.OperationalError:
+        pass
+
+    try:
+        cursor.execute("ALTER TABLE tasks ADD COLUMN watch_path TEXT")
+    except sqlite3.OperationalError:
+        pass
+
+    try:
+        cursor.execute("ALTER TABLE tasks ADD COLUMN timeout_seconds INTEGER DEFAULT 0")
+    except sqlite3.OperationalError:
+        pass
+
+    try:
+        cursor.execute("ALTER TABLE tasks ADD COLUMN max_retries INTEGER DEFAULT 0")
+    except sqlite3.OperationalError:
+        pass
+
+    try:
+        cursor.execute("ALTER TABLE tasks ADD COLUMN retry_delay_seconds INTEGER DEFAULT 10")
+    except sqlite3.OperationalError:
+        pass
+
+    try:
+        cursor.execute("ALTER TABLE tasks ADD COLUMN requires_ac_power INTEGER DEFAULT 0")
+    except sqlite3.OperationalError:
+        pass
+
+    try:
+        cursor.execute("ALTER TABLE tasks ADD COLUMN prevent_sleep INTEGER DEFAULT 0")
+    except sqlite3.OperationalError:
+        pass
+
+    try:
+        cursor.execute("ALTER TABLE tasks ADD COLUMN on_success_task_id TEXT")
+    except sqlite3.OperationalError:
+        pass
+
+    try:
+        cursor.execute("ALTER TABLE tasks ADD COLUMN on_failure_task_id TEXT")
+    except sqlite3.OperationalError:
+        pass
     
     # Runs table
     cursor.execute('''
@@ -71,6 +116,16 @@ def init_db():
     
     try:
         cursor.execute("ALTER TABLE runs ADD COLUMN pid INTEGER")
+    except sqlite3.OperationalError:
+        pass
+
+    try:
+        cursor.execute("ALTER TABLE runs ADD COLUMN retry_count INTEGER DEFAULT 0")
+    except sqlite3.OperationalError:
+        pass
+
+    try:
+        cursor.execute("ALTER TABLE runs ADD COLUMN trigger_source TEXT DEFAULT 'schedule'")
     except sqlite3.OperationalError:
         pass
     

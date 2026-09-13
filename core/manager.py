@@ -6,6 +6,7 @@ import cron_descriptor
 import os
 import signal
 import json
+import time
 from .db import get_connection
 
 class TaskManager:
@@ -83,6 +84,16 @@ class TaskManager:
         return prefix
 
     @staticmethod
+    def is_on_ac_power() -> bool:
+        try:
+            res = subprocess.run(["/usr/bin/pmset", "-g", "batt"], capture_output=True, text=True)
+            if "Battery Power" in res.stdout:
+                return False
+            return True
+        except Exception:
+            return True
+
+    @staticmethod
     def _command_for_execution(task: Dict[str, Any], fallback_command: Optional[str] = None) -> str:
         raw_command = TaskManager._normalize_optional_text(task.get("raw_command"))
         if raw_command:
@@ -98,6 +109,15 @@ class TaskManager:
         working_directory: Optional[str] = None,
         environment_json: Optional[str] = None,
         shell: Optional[str] = None,
+        trigger_type: str = "cron",
+        watch_path: Optional[str] = None,
+        timeout_seconds: int = 0,
+        max_retries: int = 0,
+        retry_delay_seconds: int = 10,
+        requires_ac_power: bool = False,
+        prevent_sleep: bool = False,
+        on_success_task_id: Optional[str] = None,
+        on_failure_task_id: Optional[str] = None,
     ) -> str:
         conn = get_connection()
         cursor = conn.cursor()
@@ -108,14 +128,19 @@ class TaskManager:
         normalized_shell = TaskManager._normalize_optional_text(shell) or TaskManager.DEFAULT_SHELL
         desc = TaskManager._describe_schedule(schedule)
         display_command = TaskManager._display_command(normalized_raw_command, normalized_working_directory, command)
+        normalized_watch_path = TaskManager._normalize_optional_text(watch_path)
+        normalized_trigger_type = TaskManager._normalize_optional_text(trigger_type) or "cron"
 
         try:
             cursor.execute('''
                 INSERT INTO tasks (
                     id, name, command, schedule, schedule_desc, is_paused,
-                    raw_command, working_directory, environment_json, shell
+                    raw_command, working_directory, environment_json, shell,
+                    trigger_type, watch_path, timeout_seconds, max_retries,
+                    retry_delay_seconds, requires_ac_power, prevent_sleep,
+                    on_success_task_id, on_failure_task_id
                 )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ''', (
                 task_id,
                 name,
@@ -127,6 +152,15 @@ class TaskManager:
                 normalized_working_directory,
                 normalized_environment_json,
                 normalized_shell,
+                normalized_trigger_type,
+                normalized_watch_path,
+                int(timeout_seconds or 0),
+                int(max_retries or 0),
+                int(retry_delay_seconds or 10),
+                1 if requires_ac_power else 0,
+                1 if prevent_sleep else 0,
+                TaskManager._normalize_optional_text(on_success_task_id),
+                TaskManager._normalize_optional_text(on_failure_task_id),
             ))
             conn.commit()
             return task_id
@@ -146,6 +180,15 @@ class TaskManager:
         working_directory: Optional[str] = None,
         environment_json: Optional[str] = None,
         shell: Optional[str] = None,
+        trigger_type: str = "cron",
+        watch_path: Optional[str] = None,
+        timeout_seconds: int = 0,
+        max_retries: int = 0,
+        retry_delay_seconds: int = 10,
+        requires_ac_power: bool = False,
+        prevent_sleep: bool = False,
+        on_success_task_id: Optional[str] = None,
+        on_failure_task_id: Optional[str] = None,
     ) -> str:
         conn = get_connection()
         cursor = conn.cursor()
@@ -155,13 +198,18 @@ class TaskManager:
         normalized_shell = TaskManager._normalize_optional_text(shell) or TaskManager.DEFAULT_SHELL
         desc = TaskManager._describe_schedule(schedule)
         display_command = TaskManager._display_command(normalized_raw_command, normalized_working_directory, command)
+        normalized_watch_path = TaskManager._normalize_optional_text(watch_path)
+        normalized_trigger_type = TaskManager._normalize_optional_text(trigger_type) or "cron"
 
         try:
             cursor.execute(
                 '''
                 UPDATE tasks
                 SET name = ?, command = ?, schedule = ?, schedule_desc = ?,
-                    raw_command = ?, working_directory = ?, environment_json = ?, shell = ?
+                    raw_command = ?, working_directory = ?, environment_json = ?, shell = ?,
+                    trigger_type = ?, watch_path = ?, timeout_seconds = ?, max_retries = ?,
+                    retry_delay_seconds = ?, requires_ac_power = ?, prevent_sleep = ?,
+                    on_success_task_id = ?, on_failure_task_id = ?
                 WHERE name = ?
                 ''',
                 (
@@ -173,6 +221,15 @@ class TaskManager:
                     normalized_working_directory,
                     normalized_environment_json,
                     normalized_shell,
+                    normalized_trigger_type,
+                    normalized_watch_path,
+                    int(timeout_seconds or 0),
+                    int(max_retries or 0),
+                    int(retry_delay_seconds or 10),
+                    1 if requires_ac_power else 0,
+                    1 if prevent_sleep else 0,
+                    TaskManager._normalize_optional_text(on_success_task_id),
+                    TaskManager._normalize_optional_text(on_failure_task_id),
                     existing_name,
                 ),
             )
@@ -248,16 +305,16 @@ class TaskManager:
             conn.close()
 
     @staticmethod
-    def log_run_start(task_id: str) -> str:
+    def log_run_start(task_id: str, retry_count: int = 0, trigger_source: str = "schedule") -> str:
         conn = get_connection()
         cursor = conn.cursor()
         run_id = str(uuid.uuid4())
         now = datetime.datetime.now().isoformat()
         try:
             cursor.execute('''
-                INSERT INTO runs (id, task_id, status, started_at)
-                VALUES (?, ?, ?, ?)
-            ''', (run_id, task_id, "running", now))
+                INSERT INTO runs (id, task_id, status, started_at, retry_count, trigger_source)
+                VALUES (?, ?, ?, ?, ?, ?)
+            ''', (run_id, task_id, "running", now, retry_count, trigger_source))
             conn.commit()
             return run_id
         finally:
@@ -404,7 +461,12 @@ class TaskManager:
             conn.close()
 
     @staticmethod
-    def execute_task(task_id: str, command: Optional[str] = None) -> bool:
+    def execute_task(
+        task_id: str,
+        command: Optional[str] = None,
+        retry_count: int = 0,
+        trigger_source: str = "schedule",
+    ) -> bool:
         if TaskManager.has_running_run(task_id):
             return False
 
@@ -412,22 +474,54 @@ class TaskManager:
         if task is None:
             raise ValueError(f"Task '{task_id}' not found.")
 
-        run_id = TaskManager.log_run_start(task_id)
+        # Check AC power requirement
+        if bool(task.get("requires_ac_power")) and not TaskManager.is_on_ac_power():
+            run_id = TaskManager.log_run_start(task_id, retry_count=retry_count, trigger_source=trigger_source)
+            TaskManager.log_run_end(
+                run_id=run_id,
+                status="skipped",
+                exit_code=0,
+                stdout="Skipped run: task requires AC power, but Mac is currently on battery power.",
+                stderr="",
+            )
+            return False
+
+        run_id = TaskManager.log_run_start(task_id, retry_count=retry_count, trigger_source=trigger_source)
         log_dir = os.path.expanduser("~/.gearbox/logs")
         os.makedirs(log_dir, exist_ok=True)
         log_path = os.path.join(log_dir, f"{run_id}.log")
         
+        status = "failed"
+        exit_code = -1
+        timed_out = False
+
         try:
             shell_path = TaskManager._normalize_optional_text(task.get("shell")) or TaskManager.DEFAULT_SHELL
             working_directory = TaskManager._normalize_optional_text(task.get("working_directory"))
             environment = os.environ.copy()
             environment.update(TaskManager._parse_environment_json(task.get("environment_json")))
+            if task.get("trigger_type"):
+                environment["GEARBOX_TRIGGER_TYPE"] = str(task["trigger_type"])
+            if task.get("watch_path"):
+                environment["GEARBOX_WATCH_PATH"] = str(task["watch_path"])
+            environment["GEARBOX_RETRY_COUNT"] = str(retry_count)
+            environment["GEARBOX_TRIGGER_SOURCE"] = str(trigger_source)
 
             final_cmd = TaskManager._bootstrap_prefix_for_shell(shell_path) + TaskManager._command_for_execution(task, fallback_command=command)
             
-            with open(log_path, "w") as log_file:
+            exec_args = [shell_path, "-c", final_cmd]
+            if bool(task.get("prevent_sleep")):
+                exec_args = ["/usr/bin/caffeinate", "-dimsu", *exec_args]
+
+            timeout = task.get("timeout_seconds")
+            timeout = int(timeout) if timeout and int(timeout) > 0 else None
+
+            with open(log_path, "a") as log_file:
+                if retry_count > 0:
+                    log_file.write(f"\n--- Gearbox Retry Attempt {retry_count} ---\n")
+
                 process = subprocess.Popen(
-                    [shell_path, "-c", final_cmd],
+                    exec_args,
                     stdout=log_file,
                     stderr=subprocess.STDOUT, # Combine for live streaming simplicity
                     text=True,
@@ -437,18 +531,32 @@ class TaskManager:
                 )
                 
                 TaskManager.update_run_pid(run_id, process.pid)
-                process.wait()
-            
-            # Detect cancellation from signals
-            if process.returncode in [-9, -15, 137, 143]:
-                status = "cancelled"
-            else:
-                status = "success" if process.returncode == 0 else "failed"
-                
+
+                try:
+                    process.wait(timeout=timeout)
+                    exit_code = process.returncode
+                    # Detect cancellation from signals
+                    if exit_code in [-9, -15, 137, 143]:
+                        status = "cancelled"
+                    else:
+                        status = "success" if exit_code == 0 else "failed"
+                except subprocess.TimeoutExpired:
+                    timed_out = True
+                    try:
+                        os.killpg(os.getpgid(process.pid), signal.SIGTERM)
+                        time.sleep(0.5)
+                        if TaskManager._pid_exists(process.pid):
+                            os.killpg(os.getpgid(process.pid), signal.SIGKILL)
+                    except Exception:
+                        pass
+                    log_file.write(f"\n[Gearbox Error] Task execution timed out after {timeout} seconds.\n")
+                    status = "failed"
+                    exit_code = -124
+
             TaskManager.log_run_end(
                 run_id=run_id,
                 status=status,
-                exit_code=process.returncode
+                exit_code=exit_code,
             )
         except Exception as e:
             with open(log_path, "a") as f:
@@ -456,6 +564,30 @@ class TaskManager:
             TaskManager.log_run_end(
                 run_id=run_id,
                 status="failed",
-                exit_code=-1
+                exit_code=-1,
             )
+
+        # Retry handling
+        max_retries = int(task.get("max_retries") or 0)
+        retry_delay = int(task.get("retry_delay_seconds") or 10)
+
+        if status == "failed" and not timed_out and retry_count < max_retries:
+            time.sleep(retry_delay)
+            return TaskManager.execute_task(
+                task_id,
+                command=command,
+                retry_count=retry_count + 1,
+                trigger_source="retry",
+            )
+
+        # Workflow chaining
+        if status == "success" and task.get("on_success_task_id"):
+            successor_id = task["on_success_task_id"]
+            if successor_id != task_id:
+                TaskManager.execute_task(successor_id, trigger_source="workflow_success")
+        elif status == "failed" and task.get("on_failure_task_id"):
+            failure_id = task["on_failure_task_id"]
+            if failure_id != task_id:
+                TaskManager.execute_task(failure_id, trigger_source="workflow_failure")
+
         return True

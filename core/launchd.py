@@ -185,14 +185,22 @@ def _plist_start_calendar_interval(schedule: str):
 def _plist_contents(task: dict, python_executable: str, cli_script_path: str) -> dict:
     stdout_path = str(launchd_logs_dir() / f"{task['id']}.log")
     stderr_path = str(launchd_logs_dir() / f"{task['id']}.err.log")
-    return {
+    plist: dict = {
         "Label": task_label(task["id"]),
         "ProgramArguments": [python_executable, cli_script_path, "run-id", task["id"]],
-        "StartCalendarInterval": _plist_start_calendar_interval(task["schedule"]),
         "StandardOutPath": stdout_path,
         "StandardErrorPath": stderr_path,
         "ProcessType": "Background",
     }
+    if task.get("trigger_type") == "file_watch" and task.get("watch_path"):
+        resolved_path = str(Path(task["watch_path"]).expanduser().resolve())
+        plist["WatchPaths"] = [resolved_path]
+    elif task.get("schedule"):
+        try:
+            plist["StartCalendarInterval"] = _plist_start_calendar_interval(task["schedule"])
+        except Exception:
+            pass
+    return plist
 
 
 def install_task(task: dict, python_executable: str, cli_script_path: str) -> Path:

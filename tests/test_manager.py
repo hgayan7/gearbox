@@ -162,9 +162,202 @@ def test_execute_task_skips_duplicate_running_task(test_db, monkeypatch):
     task_id = TaskManager.add_task("No Duplicate", "0 11 * * *", "echo 'hello'")
     TaskManager.log_run_start(task_id)
 
-    def fail_log_run_start(task_id):
+    def fail_log_run_start(task_id, **kwargs):
         raise AssertionError("should not start a duplicate run")
 
     monkeypatch.setattr(TaskManager, "log_run_start", staticmethod(fail_log_run_start))
 
     assert TaskManager.execute_task(task_id, "echo 'hello'") is False
+
+
+def test_add_and_update_task_stores_part1_settings(test_db):
+    task_id = TaskManager.add_task(
+        "Part1 Task",
+        "0 12 * * *",
+        "echo part1",
+        trigger_type="file_watch",
+        watch_path="/tmp/incoming",
+        timeout_seconds=60,
+        max_retries=3,
+        retry_delay_seconds=15,
+        requires_ac_power=True,
+        prevent_sleep=True,
+    )
+
+    task = TaskManager.get_task_by_id(task_id)
+    assert task["trigger_type"] == "file_watch"
+    assert task["watch_path"] == "/tmp/incoming"
+    assert task["timeout_seconds"] == 60
+    assert task["max_retries"] == 3
+    assert task["retry_delay_seconds"] == 15
+    assert task["requires_ac_power"] == 1
+    assert task["prevent_sleep"] == 1
+
+    # Update task settings
+    TaskManager.update_task(
+        "Part1 Task",
+        "Part1 Task Updated",
+        "0 18 * * *",
+        "echo updated",
+        trigger_type="cron",
+        watch_path=None,
+        timeout_seconds=120,
+        max_retries=1,
+        retry_delay_seconds=5,
+        requires_ac_power=False,
+        prevent_sleep=False,
+    )
+
+    updated = TaskManager.get_task_by_name("Part1 Task Updated")
+    assert updated["trigger_type"] == "cron"
+    assert updated["watch_path"] is None
+    assert updated["timeout_seconds"] == 120
+    assert updated["max_retries"] == 1
+    assert updated["retry_delay_seconds"] == 5
+    assert updated["requires_ac_power"] == 0
+    assert updated["prevent_sleep"] == 0
+
+
+def test_execute_task_ac_power_skips_when_on_battery(test_db, monkeypatch):
+    task_id = TaskManager.add_task(
+        "AC Required Task",
+        "0 0 * * *",
+        "echo heavy_work",
+        requires_ac_power=True,
+    )
+
+    monkeypatch.setattr(TaskManager, "is_on_ac_power", staticmethod(lambda: False))
+
+    result = TaskManager.execute_task(task_id)
+    assert result is False
+
+    runs = TaskManager.get_task_runs(task_id)
+    assert len(runs) == 1
+    assert runs[0]["status"] == "skipped"
+    assert "requires AC power" in runs[0]["stdout"]
+
+
+def test_execute_task_ac_power_runs_when_on_ac(test_db, monkeypatch):
+    task_id = TaskManager.add_task(
+        "AC Allowed Task",
+        "0 0 * * *",
+        "echo ac_ok",
+        requires_ac_power=True,
+    )
+
+    monkeypatch.setattr(TaskManager, "is_on_ac_power", staticmethod(lambda: True))
+
+    result = TaskManager.execute_task(task_id)
+    assert result is True
+
+    runs = TaskManager.get_task_runs(task_id)
+    assert len(runs) == 1
+    assert runs[0]["status"] == "success"
+
+
+def test_execute_task_caffeinate_flag(test_db, monkeypatch):
+    task_id = TaskManager.add_task(
+        "Caffeinated Task",
+        "0 0 * * *",
+        "echo keep_awake",
+        prevent_sleep=True,
+    )
+
+    recorded_args = []
+    import subprocess
+    original_popen = subprocess.Popen
+
+    def mock_popen(args, **kwargs):
+        recorded_args.append(args)
+        return original_popen(args, **kwargs)
+
+    monkeypatch.setattr(subprocess, "Popen", mock_popen)
+
+    TaskManager.execute_task(task_id)
+
+    assert len(recorded_args) == 1
+    assert recorded_args[0][0] == "/usr/bin/caffeinate"
+    assert recorded_args[0][1] == "-dimsu"
+
+
+def test_execute_task_timeout_terminates_process(test_db):
+    task_id = TaskManager.add_task(
+        "Timeout Task",
+        "0 0 * * *",
+        "sleep 5",
+        timeout_seconds=1,
+    )
+
+    result = TaskManager.execute_task(task_id)
+    assert result is True
+
+    runs = TaskManager.get_task_runs(task_id)
+    assert len(runs) == 1
+    assert runs[0]["status"] == "failed"
+    assert runs[0]["exit_code"] == -124
+    assert "timed out after 1 seconds" in runs[0]["stdout"]
+
+
+def test_execute_task_retry_mechanism(test_db):
+    task_id = TaskManager.add_task(
+        "Retry Task",
+        "0 0 * * *",
+        "exit 1",
+        max_retries=2,
+        retry_delay_seconds=0,
+    )
+
+    TaskManager.execute_task(task_id)
+
+    runs = TaskManager.get_task_runs(task_id, limit=10)
+    assert len(runs) == 3  # Initial attempt + 2 retries
+    # Runs are returned in DESC order
+    assert runs[0]["retry_count"] == 2
+    assert runs[0]["trigger_source"] == "retry"
+    assert runs[1]["retry_count"] == 1
+    assert runs[1]["trigger_source"] == "retry"
+    assert runs[2]["retry_count"] == 0
+    assert runs[2]["trigger_source"] == "schedule"
+
+
+def test_execute_task_workflow_chaining_on_success(test_db):
+    successor_id = TaskManager.add_task("Successor Task", "0 0 * * *", "echo successor_ran")
+    initial_id = TaskManager.add_task(
+        "Initial Task",
+        "0 0 * * *",
+        "echo initial_ran",
+        on_success_task_id=successor_id,
+    )
+
+    TaskManager.execute_task(initial_id)
+
+    initial_runs = TaskManager.get_task_runs(initial_id)
+    assert len(initial_runs) == 1
+    assert initial_runs[0]["status"] == "success"
+
+    successor_runs = TaskManager.get_task_runs(successor_id)
+    assert len(successor_runs) == 1
+    assert successor_runs[0]["status"] == "success"
+    assert successor_runs[0]["trigger_source"] == "workflow_success"
+
+
+def test_execute_task_workflow_chaining_on_failure(test_db):
+    failure_handler_id = TaskManager.add_task("Failure Handler", "0 0 * * *", "echo handled_failure")
+    initial_id = TaskManager.add_task(
+        "Failing Task",
+        "0 0 * * *",
+        "exit 1",
+        on_failure_task_id=failure_handler_id,
+    )
+
+    TaskManager.execute_task(initial_id)
+
+    initial_runs = TaskManager.get_task_runs(initial_id)
+    assert len(initial_runs) == 1
+    assert initial_runs[0]["status"] == "failed"
+
+    handler_runs = TaskManager.get_task_runs(failure_handler_id)
+    assert len(handler_runs) == 1
+    assert handler_runs[0]["status"] == "success"
+    assert handler_runs[0]["trigger_source"] == "workflow_failure"
+

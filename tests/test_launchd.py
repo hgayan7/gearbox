@@ -154,3 +154,48 @@ def test_sync_all_tasks_writes_active_plists_and_removes_inactive(monkeypatch, t
 
     assert any(call[:2] == ["/bin/launchctl", "bootstrap"] for call in launchctl_calls)
     assert any(call[:2] == ["/bin/launchctl", "bootout"] for call in launchctl_calls)
+
+
+def test_plist_contents_file_watch():
+    watch_task = {
+        "id": "file-task-1",
+        "name": "Folder Watcher",
+        "trigger_type": "file_watch",
+        "watch_path": "/Users/test/DropFolder",
+        "is_paused": 0,
+    }
+
+    plist_data = launchd._plist_contents(watch_task, "/usr/bin/python3", "/tmp/cli.py")
+    assert "WatchPaths" in plist_data
+    assert plist_data["WatchPaths"] == ["/Users/test/DropFolder"]
+    assert "StartCalendarInterval" not in plist_data
+    assert plist_data["ProgramArguments"] == ["/usr/bin/python3", "/tmp/cli.py", "run-id", "file-task-1"]
+
+
+def test_sync_all_tasks_with_file_watch(monkeypatch, tmp_path):
+    monkeypatch.setenv("GEARBOX_LAUNCH_AGENTS_DIR", str(tmp_path / "LaunchAgents"))
+    launchctl_calls = []
+
+    def fake_run(args, capture_output, text):
+        launchctl_calls.append(args)
+        return DummyCompletedProcess()
+
+    monkeypatch.setattr("subprocess.run", fake_run)
+
+    watch_task = {
+        "id": "watch-task",
+        "name": "Watch Task",
+        "trigger_type": "file_watch",
+        "watch_path": "/Users/test/Watched",
+        "is_paused": 0,
+    }
+
+    launchd.sync_all_tasks([watch_task], "/usr/bin/python3", "/tmp/cli.py")
+
+    plist_path = launchd.task_plist_path(watch_task["id"])
+    assert plist_path.exists()
+    plist_bytes = plist_path.read_bytes()
+    assert b"WatchPaths" in plist_bytes
+    assert b"/Users/test/Watched" in plist_bytes
+    assert any(call[:2] == ["/bin/launchctl", "bootstrap"] for call in launchctl_calls)
+
